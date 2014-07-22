@@ -17,11 +17,43 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+/*
+ * PROGRAM:
+ * CheckValveChatRelay.java
+ *
+ * DESCRIPTION:
+ * Parse HLDS/SRCDS log data and relay chat messages to the clients
+ * who want them.
+ *
+ * AUTHOR:
+ * Dave Parker
+ *
+ * CHANGE LOG:
+ *
+ * November 12, 2013
+ * - Version 1.0.0.
+ * - Initial release.
+ *
+ * July 8, 2014
+ * - Version 1.1.0.
+ * - Added this header comment block
+ * - Fixed handling of SRCDS and HLDS console chat messages.
+ * - Fixed incorrect content length in packets.
+ * - Added command line option to specify the configuration file.
+ * - Added usage() method to show command line options.
+ * - Added debugLevel option for more verbose logging.
+ * - Added code for additional logging based on the value of
+ *   debugLevel.
+ */
+
 package com.dparker.apps.checkvalve;
 
 import java.io.*;
 import java.net.*;
 import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import java.lang.StackTraceElement;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.nio.ByteOrder;
@@ -46,7 +78,7 @@ public class CheckValveChatRelay
     final static byte PTYPE_CONNECTION_SUCCESS = (byte) 0x04;
     final static byte PTYPE_MESSAGE_DATA = (byte) 0x05;
     final static long START_TIME = System.currentTimeMillis();
-    final static String PROGRAM_VERSION = "1.0.0";
+    final static String PROGRAM_VERSION = "1.1.0";
     final static String IDENTITY_STRING = "CheckValve Chat Relay " + PROGRAM_VERSION;
 
     //
@@ -64,6 +96,7 @@ public class CheckValveChatRelay
     static int autoBanThreshold = 0;
     static int acceptedConnections = 0;
     static int rejectedConnections = 0;
+    static int debugLevel = 0;
 
     static long clientCheckInterval = 0;
     static long logStatsInterval = 0;
@@ -92,6 +125,52 @@ public class CheckValveChatRelay
 
     public static void main(String args[]) throws InterruptedException
     {
+        // Default configuration file
+        configFile = "checkvalvechatrelay.properties";
+
+        // Parse command line options
+        if( args.length > 0 )
+        {
+            String opt = new String();
+            String val = new String();
+
+            for( int i = 0; i < args.length; i++ )
+            {
+                opt = args[i];
+
+                if( opt.equals("-c") || opt.equals("--config") )
+                {
+                    try
+                    {
+                        val = args[++i];
+                        configFile = val;
+                    }
+                    catch( ArrayIndexOutOfBoundsException e )
+                    {
+                        System.out.println();
+                        System.out.println("ERROR: The option " + opt + " requires a value.");
+                        usage();
+                        System.exit(1);
+                    }
+                }
+                else if( opt.equals("-h") || opt.equals("--help") )
+                {
+                    usage();
+                    System.exit(0);
+                }
+                else
+                {
+                    System.out.println();
+                    System.out.println("Invalid option: " + opt);
+                    usage();
+                    System.exit(1);
+                }
+            }
+
+            opt = "";
+            val = "";
+        }
+
         // Environment
         String javaVersion = System.getProperty("java.version");
         String osVersion = System.getProperty("os.version");
@@ -104,16 +183,23 @@ public class CheckValveChatRelay
         if( logFile.length() > 0 )
         {
             if( logger.open(logFile) == -1 )
-                System.out.println( "\nWARNING: Failed to open logfile " + logFile + " for writing.  Logging is disabled.\n" );
+            {
+                System.out.println();
+                System.out.println( "WARNING: Failed to open logfile " + logFile + " for writing.  Logging is disabled." );
+                System.out.println();
+            }
         }
         else
         {
-            System.out.println( "\nWARNING: No log file is defined in the configuration file.  Logging is disabled.\n" );
+            System.out.println();
+            System.out.println( "WARNING: No log file is defined in the configuration file.  Logging is disabled." );
+            System.out.println();
         }
 
         // Write startup messages to the log file
         logger.writeln( "[STARTUP] CheckValve Chat Relay started (version " + PROGRAM_VERSION + ")" );
         logger.writeln( "[STARTUP] Using Java " + javaVersion + " on " + osName + " " + osVersion + " (" + osArch + ")" );
+        logger.writeln( "[STARTUP] Debug level = " + debugLevel );
         logger.writeln( "[STARTUP] Client Listener Address = " + clientListenAddress );
         logger.writeln( "[STARTUP] Client Listener Port = " + clientListenPort );
         logger.writeln( "[STARTUP] Message Listener Address = " + messageListenAddress );
@@ -154,6 +240,15 @@ public class CheckValveChatRelay
         final Thread logStatsThread = new Thread(new LogStats());
         final Thread logRotateThread = new Thread(new LogRotate());
 
+        // Set thread names
+        tcpListenerThread.setName("ClientListener");
+        udpListenerThread.setName("MessageListener");
+        sendChatMessageThread.setName("SendChatMessage");
+        checkConnectionThread.setName("CheckConnection");
+        checkBansThread.setName("CheckBans");
+        logStatsThread.setName("LogStats");
+        logRotateThread.setName("LogRotate");
+
         // Start threads
         tcpListenerThread.start();
         udpListenerThread.start();
@@ -178,7 +273,19 @@ public class CheckValveChatRelay
             @Override
             public void run()
             {
+                if( debugLevel >= 3 )
+                    logger.debug(3, "Starting shutdown hook.");
+
+                long id = Thread.currentThread().getId();
+                String name = Thread.currentThread().getName();
+
+                if( debugLevel >= 3 )
+                    logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
                 shuttingDown = true;
+
+                if( debugLevel >= 2 )
+                    logger.debug(2, "Shutdown flag has been set.");
 
                 try
                 {
@@ -191,6 +298,9 @@ public class CheckValveChatRelay
                         {
                             connections[i].closeSocket();
                             connections[i].kill();
+
+                            if( debugLevel >= 2 )
+                                logger.debug(2, "Connection " + i + " has been shut down.");
                         }
                     }
 
@@ -223,14 +333,36 @@ public class CheckValveChatRelay
                 }
                 catch( Exception e )
                 {
-                    logger.writeln( "[SHUTDOWN] ERROR: Caught an exception during shutdown!" );
-                    logger.writeln( "[SHUTDOWN] ERROR: " + e.toString() );
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] caught an exception.");
+
+                    logger.writeln( "[SHUTDOWN] [ERROR] Shutdown hook caught an exception." );
+                    logger.writeln( "[SHUTDOWN] [ERROR] " + e.toString() );
+
+                    if( debugLevel >= 2 )
+                    {
+                        StackTraceElement[] ste = e.getStackTrace();
+
+                        for(int x = 0; x < ste.length; x++)
+                            logger.debug(2, ste[x].toString() );
+                    }
 
                     // Shutdown
                     return;
                 }
             }
         });
+    }
+
+    private static void usage()
+    {
+        System.out.println();
+        System.out.println("Usage: java -jar checkvalvechatrelay.jar [-c <file>] [-h]");
+        System.out.println();
+        System.out.println("Command line options:");
+        System.out.println("    -c|--config <file>  Get configuration from <file> instead of the default (checkvalvechatrelay.properties)");
+        System.out.println("    -h|--help           Show this help and exit.");
+        System.out.println();
     }
 
     private static void parseConfig()
@@ -243,6 +375,7 @@ public class CheckValveChatRelay
         final String DEFAULT_CHECK_INTERVAL = "10";
         final String DEFAULT_CLIENT_ADDRESS = "0.0.0.0";
         final String DEFAULT_CLIENT_PORT = "23456";
+        final String DEFAULT_DEBUG_LEVEL = "0";
         final String DEFAULT_LOG_FILE = "";
         final String DEFAULT_LOGROTATE_ENABLED = "1";
         final String DEFAULT_LOGROTATE_INTERVAL = "168";
@@ -255,7 +388,6 @@ public class CheckValveChatRelay
         final String DEFAULT_PASSWORD = "";
 
         Properties config = new Properties();
-        String configFile = "checkvalvechatrelay.properties";
 
         try
         {
@@ -265,12 +397,12 @@ public class CheckValveChatRelay
         }
         catch( FileNotFoundException e )
         {
-            System.err.println( "ERROR: Configuration file " + configFile + " does not exist." );
+            System.err.println( "[ERROR] Configuration file " + configFile + " does not exist." );
             System.exit(1);
         }
         catch( IOException ioe )
         {
-            System.err.println( "ERROR: Failed to read configuration file " + configFile + "." );
+            System.err.println( "[ERROR] Failed to read configuration file " + configFile + "." );
             System.exit(1);
         }
 
@@ -286,7 +418,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             messageListenPort = Integer.parseInt(DEFAULT_MESSAGE_PORT);
-            System.out.println( "\nWARNING: Specified value for messageListenPort is invalid, using default (" + DEFAULT_MESSAGE_PORT + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for messageListenPort is invalid, using default (" + DEFAULT_MESSAGE_PORT + ")." );
         }
 
         try
@@ -297,7 +430,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             clientListenPort = Integer.parseInt(DEFAULT_CLIENT_PORT);
-            System.out.println( "\nWARNING: Specified value for clientListenPort is invalid, using default (" + DEFAULT_CLIENT_PORT + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for clientListenPort is invalid, using default (" + DEFAULT_CLIENT_PORT + ")." );
         }
 
         try
@@ -308,7 +442,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             maxClients = Integer.parseInt(DEFAULT_MAX_CLIENTS);
-            System.out.println( "\nWARNING: Specified value for maxClients is invalid, using default (" + DEFAULT_MAX_CLIENTS + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for maxClients is invalid, using default (" + DEFAULT_MAX_CLIENTS + ")." );
         }
 
         try
@@ -319,7 +454,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             logStatsEnabled = Integer.parseInt(DEFAULT_LOGSTATS_ENABLED);
-            System.out.println( "\nWARNING: Specified value for logStatsEnabled is invalid, using default (" + DEFAULT_LOGSTATS_ENABLED + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for logStatsEnabled is invalid, using default (" + DEFAULT_LOGSTATS_ENABLED + ")." );
         }
 
         try
@@ -330,7 +466,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             logRotateEnabled = Integer.parseInt(DEFAULT_LOGROTATE_ENABLED);
-            System.out.println( "\nWARNING: Specified value for logRotateEnabled is invalid, using default (" + DEFAULT_LOGROTATE_ENABLED + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for logRotateEnabled is invalid, using default (" + DEFAULT_LOGROTATE_ENABLED + ")." );
         }
 
         try
@@ -341,7 +478,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             logRotateKeepFiles = Integer.parseInt(DEFAULT_LOGROTATE_KEEP_FILES);
-            System.out.println( "\nWARNING: Specified value for logRotateKeepFiles is invalid, using default (" + DEFAULT_LOGROTATE_KEEP_FILES + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for logRotateKeepFiles is invalid, using default (" + DEFAULT_LOGROTATE_KEEP_FILES + ")." );
         }
 
         try
@@ -352,7 +490,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             autoBanEnabled = Integer.parseInt(DEFAULT_AUTOBAN_ENABLED);
-            System.out.println( "\nWARNING: Specified value for autoBanEnabled is invalid, using default (" + DEFAULT_AUTOBAN_ENABLED + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for autoBanEnabled is invalid, using default (" + DEFAULT_AUTOBAN_ENABLED + ")." );
         }
 
         try
@@ -363,7 +502,20 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             autoBanThreshold = Integer.parseInt(DEFAULT_AUTOBAN_THRESHOLD);
-            System.out.println( "\nWARNING: Specified value for autoBanThreshold is invalid, using default (" + DEFAULT_AUTOBAN_THRESHOLD + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for autoBanThreshold is invalid, using default (" + DEFAULT_AUTOBAN_THRESHOLD + ")." );
+        }
+
+        try
+        {
+            debugLevel = Integer.parseInt(config.getProperty("debugLevel",DEFAULT_DEBUG_LEVEL).trim());
+            if( debugLevel < 0 ) throw new NumberFormatException();
+        }
+        catch( NumberFormatException n )
+        {
+            debugLevel = Integer.parseInt(DEFAULT_DEBUG_LEVEL);
+            System.out.println();
+            System.out.println( "WARNING: Specified value for debugLevel is invalid, using default (" + DEFAULT_DEBUG_LEVEL + ")." );
         }
 
         //
@@ -378,7 +530,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             clientCheckInterval = Long.parseLong(DEFAULT_CHECK_INTERVAL)*1000;
-            System.out.println( "\nWARNING: Specified value for clientCheckInterval is invalid, using default (" + DEFAULT_CHECK_INTERVAL + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for clientCheckInterval is invalid, using default (" + DEFAULT_CHECK_INTERVAL + ")." );
         }
 
         try
@@ -389,7 +542,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             logStatsInterval = Long.parseLong(DEFAULT_LOGSTATS_INTERVAL)*1000;
-            System.out.println( "\nWARNING: Specified value for logStatsInterval is invalid, using default (" + DEFAULT_LOGSTATS_INTERVAL + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for logStatsInterval is invalid, using default (" + DEFAULT_LOGSTATS_INTERVAL + ")." );
         }
 
         try
@@ -400,7 +554,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             logRotateInterval = Long.parseLong(DEFAULT_LOGROTATE_INTERVAL)*60*60*1000;
-            System.out.println( "\nWARNING: Specified value for logRotateInterval is invalid, using default (" + DEFAULT_LOGROTATE_INTERVAL + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for logRotateInterval is invalid, using default (" + DEFAULT_LOGROTATE_INTERVAL + ")." );
         }
 
         try
@@ -411,7 +566,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             autoBanTimeLimit = Long.parseLong(DEFAULT_AUTOBAN_TIMELIMIT)*1000;
-            System.out.println( "\nWARNING: Specified value for autoBanTimeLimit is invalid, using default (" + DEFAULT_AUTOBAN_TIMELIMIT + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for autoBanTimeLimit is invalid, using default (" + DEFAULT_AUTOBAN_TIMELIMIT + ")." );
         }
 
         try
@@ -422,7 +578,8 @@ public class CheckValveChatRelay
         catch( NumberFormatException n )
         {
             autoBanDuration = Long.parseLong(DEFAULT_AUTOBAN_DURATION)*1000;
-            System.out.println( "\nWARNING: Specified value for autoBanDuration is invalid, using default (" + DEFAULT_AUTOBAN_DURATION + ")." );
+            System.out.println();
+            System.out.println( "WARNING: Specified value for autoBanDuration is invalid, using default (" + DEFAULT_AUTOBAN_DURATION + ")." );
         }
 
         //
@@ -447,6 +604,8 @@ public class CheckValveChatRelay
         private String clientIp = new String();
         private String clientPass = new String();
         private String clientString = new String();
+        private byte reqType = BYTE_ZERO;
+        private int reqHeader = 0;
         private int nextSlot = 0;
         private int clientPort = 0;
         private int ready = 0;
@@ -458,8 +617,17 @@ public class CheckValveChatRelay
         private Map<String, Integer> badConnectionAttempts = new HashMap<String, Integer>();
         private Map<String, Long> badAttemptTimes = new HashMap<String, Long>();
 
+        private long id = 0;
+        private String name = new String();
+
         public void run()
         {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
             for(;;)
             {
                 try
@@ -468,12 +636,23 @@ public class CheckValveChatRelay
                 }
                 catch( InterruptedException ie )
                 {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
                     return;
                 }
                 catch( SocketException se )
                 {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] caught a SocketException.");
+
                     if( shuttingDown )
+                    {
+                        if( debugLevel >= 3 )
+                            logger.debug(3, name + " [ID=" + id + "] ignored the SocketException (shutdown flag is set).");
+
                         return;
+                    }
 
                     //
                     // If the listening flag is not set then the socket could not be opened
@@ -482,26 +661,47 @@ public class CheckValveChatRelay
                     {
                         System.err.println();
 
-                        logger.writeln( "ERROR: Unable to create TCP listening socket." );
-                        System.err.println( "ERROR: Unable to create TCP listening socket." );
-                        logger.writeln( "ERROR: " + se.toString() );
-                        System.err.println( "ERROR: " + se.toString() );
+                        logger.writeln( "[ERROR] Unable to create TCP listening socket." );
+                        System.err.println( "[ERROR] Unable to create TCP listening socket." );
+                        logger.writeln( "[ERROR] " + se.toString() );
+                        System.err.println( "[ERROR] " + se.toString() );
+
+                        if( debugLevel >= 2 )
+                        {
+                            StackTraceElement[] ste = se.getStackTrace();
+
+                            for(int x = 0; x < ste.length; x++)
+                                logger.debug(2, ste[x].toString() );
+                        }
 
                         if( ! shuttingDown )
+                        {
+                            if( debugLevel >= 2 )
+                                logger.debug(2, "Client listener is calling for the program to shut down.");
+
                             System.exit(1);
+                        }
 
                         return;
                     }
                     else
                     {
-                        logger.writeln( "ERROR: Client listener thread caught an exception:" );
-                        logger.writeln( "ERROR: " + se.toString() );
+                        logger.writeln( "[ERROR] Client listener thread caught an exception:" );
+                        logger.writeln( "[ERROR] " + se.toString() );
+
+                        if( debugLevel >= 2 )
+                        {
+                            StackTraceElement[] ste = se.getStackTrace();
+
+                            for(int x = 0; x < ste.length; x++)
+                                logger.debug(2, ste[x].toString() );
+                        }
 
                         if( clientListenerSocket.isClosed() )
                         {
                             listening = false;
-                            logger.writeln( "ERROR: The client listener socket closed unexpectedly." );
-                            logger.writeln( "ERROR: Attempting to restart the client listener." );
+                            logger.writeln( "[ERROR] The client listener socket closed unexpectedly." );
+                            logger.writeln( "[ERROR] Attempting to restart the client listener." );
                         }
                         else
                         {
@@ -511,18 +711,33 @@ public class CheckValveChatRelay
                 }
                 catch( Exception e )
                 {
-                    if( shuttingDown )
-                        return;
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] caught an exception.");
 
-                    logger.writeln( "ERROR: Client listener thread caught an exception:" );
-                    logger.writeln( "ERROR: " + e.toString() );
-                    e.printStackTrace();
+                    if( shuttingDown )
+                    {
+                        if( debugLevel >= 3 )
+                            logger.debug(3, name + " [ID=" + id + "] ignored the exception (shutdown flag is set).");
+
+                        return;
+                    }
+
+                    logger.writeln( "[ERROR] Client listener thread caught an exception:" );
+                    logger.writeln( "[ERROR] " + e.toString() );
+
+                    if( debugLevel >= 2 )
+                    {
+                        StackTraceElement[] ste = e.getStackTrace();
+
+                        for(int x = 0; x < ste.length; x++)
+                            logger.debug(2, ste[x].toString() );
+                    }
 
                     if( clientListenerSocket.isClosed() )
                     {
                         listening = false;
-                        logger.writeln( "ERROR: The client listener socket closed unexpectedly." );
-                        logger.writeln( "ERROR: Attempting to restart the client listener." );
+                        logger.writeln( "[ERROR] The client listener socket closed unexpectedly." );
+                        logger.writeln( "[ERROR] Attempting to restart the client listener." );
                     }
                     else
                     {
@@ -567,6 +782,10 @@ public class CheckValveChatRelay
                 if( bannedClients.containsKey(clientIp) )
                 {
                     clientSocket.close();
+
+                    if( debugLevel >= 3 )
+                        logger.debug(3, "Ignored request from banned IP address " + clientIp + ".");
+
                     continue;
                 }
 
@@ -579,6 +798,9 @@ public class CheckValveChatRelay
 
                 // Send our identity string to the client
                 sendMessageToClient(clientSocket, PTYPE_IDENTITY_STRING, IDENTITY_STRING);
+
+                if( debugLevel >= 3 )
+                    logger.debug(3, "Identity string has been sent to " + clientString + ".");
 
                 // Get the input buffer of the socket
                 in = clientSocket.getInputStream(); 
@@ -598,14 +820,33 @@ public class CheckValveChatRelay
                 catch( Exception e )
                 {
                     logger.writeln( "Rejecting client " + clientString + " : Error reading request header (" + e.toString() + ")." );
+
+                    if( debugLevel >= 2 )
+                    {
+                        StackTraceElement[] ste = e.getStackTrace();
+
+                        for(int x = 0; x < ste.length; x++)
+                            logger.debug(2, ste[x].toString() );
+                    }
+
                     updateBanList(clientIp);
                     in.close();
                     clientSocket.close();
                     continue;
                 }
 
-                if( dataBuffer.getInt() != PACKET_HEADER )
+                if( debugLevel >= 2 )
+                    logger.debug(2, "Validating connection request from " + clientString + ".");
+
+                if( (reqHeader = dataBuffer.getInt()) != PACKET_HEADER )
                 {
+                    if( debugLevel >= 3 )
+                    {
+                        String exp = "0x" + Integer.toHexString(PACKET_HEADER).toUpperCase();
+                        String rcv = "0x" + String.format("%8s", Integer.toHexString(reqHeader)).replace(' ','0').toUpperCase();
+                        logger.debug(3, "Request contains an invalid header (expected " + exp + ", received " + rcv + ").");
+                    }
+
                     logger.writeln( "Rejecting client " + clientString + " : Invalid packet (bad header)." );
                     sendMessageToClient(clientSocket, PTYPE_CONNECTION_FAILURE, "E Invalid packet");
                     updateBanList(clientIp);
@@ -615,8 +856,15 @@ public class CheckValveChatRelay
                     continue;
                 }
 
-                if( dataBuffer.get() != PTYPE_CONNECTION_REQUEST )
+                if( (reqType = dataBuffer.get()) != PTYPE_CONNECTION_REQUEST )
                 {
+                    if( debugLevel >= 3 )
+                    {
+                        String exp = "0x" + String.format("%2s", Byte.toString(PTYPE_CONNECTION_REQUEST)).replace(' ','0').toUpperCase();
+                        String rcv = "0x" + String.format("%2s", Byte.toString(reqType)).replace(' ','0').toUpperCase();
+                        logger.debug(3, "Request contains an invalid packet type (expected " + exp + ", received " + rcv + ").");
+                    }
+
                     logger.writeln( "Rejecting client " + clientString + " : Invalid packet (bad packet type)." );
                     sendMessageToClient(clientSocket, PTYPE_CONNECTION_FAILURE, "E Invalid packet");
                     updateBanList(clientIp);
@@ -630,7 +878,13 @@ public class CheckValveChatRelay
 
                 if( contentLength < 1 || contentLength > 1024 )
                 {
-                    logger.writeln( "Rejecting client " + clientString + " : Invalid content length (0x" + Integer.toHexString((int)contentLength) + ")." );
+                    if( debugLevel >= 3 )
+                    {
+                        String rcv = "0x" + String.format("%4s", Integer.toHexString((int)contentLength)).replace(' ','0').toUpperCase();
+                        logger.debug(3, "Request contains an invalid content length (" + rcv + ").");
+                    }
+
+                    logger.writeln( "Rejecting client " + clientString + " : Invalid content length." );
                     sendMessageToClient(clientSocket, PTYPE_CONNECTION_FAILURE, "E Invalid content length");
                     updateBanList(clientIp);
                     in.close();
@@ -658,6 +912,15 @@ public class CheckValveChatRelay
                 catch( Exception e )
                 {
                     logger.writeln( "Rejecting client " + clientString + " : Error reading request data (" + e.toString() + ")." );
+
+                    if( debugLevel >= 2 )
+                    {
+                        StackTraceElement[] ste = e.getStackTrace();
+
+                        for(int x = 0; x < ste.length; x++)
+                            logger.debug(2, ste[x].toString() );
+                    }
+
                     updateBanList(clientIp);
                     in.close();
                     clientSocket.close();
@@ -667,7 +930,7 @@ public class CheckValveChatRelay
                 data = new String(dataBytes, dataBuffer.position(), contentLength, "UTF-8");
 
                 // Make sure the packet has data
-                if( (data == null) || (data.length() == 0) )
+                if( (data == null) || (data.length() < 2) )
                 {
                     logger.writeln( "Rejecting client " + clientString + " : Empty packet." );
                     sendMessageToClient(clientSocket, PTYPE_CONNECTION_FAILURE, "E Empty packet");
@@ -681,6 +944,9 @@ public class CheckValveChatRelay
                 // Make sure the packet data conforms to the protocol
                 if( ! data.startsWith( "P ") )
                 {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, "Incorrect start of packet data (expected 'P ', found '" + data.substring(0,2) + "').");
+
                     logger.writeln( "Rejecting client " + clientString + " : Invalid packet (bad connection request)." );
                     sendMessageToClient(clientSocket, PTYPE_CONNECTION_FAILURE, "E Invalid packet");
                     updateBanList(clientIp);
@@ -703,6 +969,9 @@ public class CheckValveChatRelay
                 // Make sure the packet has 3 fields
                 if( fields.length != 3 )
                 {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, "Incorrect number of fields in packet data (expected 3, found " + fields.length + ").");
+
                     logger.writeln( "Rejecting client " + clientString + " : Invalid packet (unable to parse)." );
                     sendMessageToClient(clientSocket, PTYPE_CONNECTION_FAILURE, "E Invalid packet");
                     updateBanList(clientIp);
@@ -759,7 +1028,12 @@ public class CheckValveChatRelay
 
                 // Remove the bad connection counter for this IP if one exists
                 if( badConnectionAttempts.containsKey(clientIp) )
+                {
                     badConnectionAttempts.remove(clientIp);
+                    
+                    if( debugLevel >= 2 )
+                        logger.debug(2, "Removed bad connection counter for " + clientIp + ".");
+                }
 
                 // Assign this client to the next available slot or reject the connection if no slots are available
                 if( (nextSlot = getNextSlot()) != -1 )
@@ -769,6 +1043,9 @@ public class CheckValveChatRelay
 
                     // Use the Connection class to handle everything
                     connections[nextSlot] = new Connection( clientSocket, fields[1], fields[2] );
+
+                    if( debugLevel >= 2 )
+                        logger.debug(2, "Created a new Connection object for " + clientString + " in slot " + nextSlot + ".");
 
                     logger.writeln( "Assigned client " + clientString + " to slot " + nextSlot );
                     logger.writeln( "Client " + clientString + " wants messages from " + fields[1] + ":" + fields[2] );
@@ -793,20 +1070,39 @@ public class CheckValveChatRelay
                 int num = badConnectionAttempts.get(ip).intValue();
                 long now = System.currentTimeMillis();
                 long last = badAttemptTimes.get(ip).longValue();
+                long diff = now - last;
 
-                if( autoBanTimeLimit == 0 || (now-last) < autoBanTimeLimit )
+                if( debugLevel >= 2 )
+                    logger.debug(2, ip + " has previously had " + num + " bad connection attempt(s).");
+
+                if( debugLevel >= 2 )
+                    logger.debug(2, "Last bad connection attempt from " + ip + " was " + diff + " milliseconds ago.");
+
+                if( autoBanTimeLimit == 0 || diff < autoBanTimeLimit )
                 {
                     if( (num+1) == autoBanThreshold )
                     {
                         bannedClients.put(ip, Long.valueOf(now));
+
+                        if( debugLevel >= 2 )
+                            logger.debug(2, "Created a new ban entry for " + ip + ".");
+
                         badConnectionAttempts.remove(ip);
                         badAttemptTimes.remove(ip);
+                    
+                        if( debugLevel >= 2 )
+                            logger.debug(2, "Removed bad connection counter for " + ip + ".");
+
                         logger.writeln( "[AUTO-BAN] Banning IP " + clientIp + " after " + (num+1) + " failed connection attempts." );
                         logger.writeln( "[AUTO-BAN] Future connection attempts from " + ip + " will be ignored." );
                     }
                     else
                     {
-                        badConnectionAttempts.put(ip, (num+1));
+                        num++;
+                        badConnectionAttempts.put(ip, num);
+
+                        if( debugLevel >= 2 )
+                            logger.debug(2, "Updated bad connection counter for " + ip + " to " + num + ".");
                     }
 
                     return;
@@ -816,14 +1112,30 @@ public class CheckValveChatRelay
             badConnectionAttempts.put(ip, 1);
             badAttemptTimes.put(ip, Long.valueOf(System.currentTimeMillis()));
 
+            if( debugLevel >= 2 )
+                logger.debug(2, "Started a bad connection counter for " + ip + ".");
+
             return;
         }
 
         private int getNextSlot()
         {
+            if( debugLevel >= 3 )
+                logger.debug(3, "Looking for an available connection slot.");
+
             for( int i = 0; i < maxClients; i++ )
+            {
                 if( ! connections[i].isAlive() )
+                {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, "Slot " + i + " is available.");
+
                     return i;
+                }
+            }
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Failed to find an available connection slot.");
 
             return -1;
         }
@@ -837,6 +1149,9 @@ public class CheckValveChatRelay
             }
             catch( Exception e )
             {
+                if( debugLevel >= 3 )
+                    logger.debug(3, address + " is not a valid IPv6 address.");
+
                 return false;
             }
         }
@@ -850,6 +1165,9 @@ public class CheckValveChatRelay
             }
             catch( Exception e )
             {
+                if( debugLevel >= 3 )
+                    logger.debug(3, address + " is not a valid IPv4 address.");
+
                 return false;
             }
         }
@@ -867,6 +1185,9 @@ public class CheckValveChatRelay
             }
             catch( Exception e )
             {
+                if( debugLevel >= 3 )
+                    logger.debug(3, s + " is not a valid port number.");
+
                 return false;
             }
         }
@@ -883,7 +1204,7 @@ public class CheckValveChatRelay
                 buffer.order(ByteOrder.LITTLE_ENDIAN);
                 buffer.putInt(PACKET_HEADER);
                 buffer.put(ptype);
-                buffer.putShort((short)messageBytes.length);
+                buffer.putShort((short)(messageBytes.length + 1));
                 buffer.put(messageBytes);
                 buffer.put(BYTE_ZERO);
                 buffer.flip();
@@ -894,9 +1215,17 @@ public class CheckValveChatRelay
             }
             catch( Exception e )
             {
-                logger.writeln( "ERROR: Caught an exception while sending message to client." );
-                logger.writeln( "ERROR: " + e.toString() );
-                logger.writeln( "ERROR: (client=" + clientString + ", message=" + message + ")." );
+                logger.writeln( "[ERROR] Caught an exception while sending message to " + clientString + " (message=" + message + ")." );
+                logger.writeln( "[ERROR] " + e.toString() );
+
+                if( debugLevel >= 2 )
+                {
+                    StackTraceElement[] ste = e.getStackTrace();
+
+                    for(int x = 0; x < ste.length; x++)
+                        logger.debug(2, ste[x].toString() );
+                }
+
                 return;
             }
         }
@@ -918,7 +1247,7 @@ public class CheckValveChatRelay
         private String messageTimestamp = new String();
         private String playerName = new String();
         private String playerTeam = new String();
-        private String PlayerSays = new String();
+        private String playerSays = new String();
         private String [] tokens = new String[2];
         private byte isSayTeam = BYTE_ZERO;
         private byte[] buffer = new byte[1024];
@@ -927,8 +1256,25 @@ public class CheckValveChatRelay
         private int messageSize = 0;
         private ByteBuffer messageBody = ByteBuffer.allocate(1024);
 
+        // Pattern for matching SRCDS console chat messages
+        private Pattern srcdsConsoleMessage = Pattern.compile("^L \\d{2}/\\d{2}/\\d{4} - \\d{2}:\\d{2}:\\d{2}: \"Console<0>");
+
+        // Pattern for matching HLDS console chat messages
+        private Pattern hldsConsoleMessage = Pattern.compile("^L \\d{2}/\\d{2}/\\d{4} - \\d{2}:\\d{2}:\\d{2}: Server say");
+
+        private Matcher m;
+
+        private long id = 0;
+        private String name = new String();
+
         public void run()
         {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
             messageBody.order(ByteOrder.LITTLE_ENDIAN);
             messageData.order(ByteOrder.LITTLE_ENDIAN);
 
@@ -940,12 +1286,23 @@ public class CheckValveChatRelay
                 }
                 catch( InterruptedException ie )
                 {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
                     return;
                 }
                 catch( SocketException se )
                 {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] caught a SocketException.");
+
                     if( shuttingDown )
+                    {
+                        if( debugLevel >= 3 )
+                            logger.debug(3, name + " [ID=" + id + "] ignored the SocketException (shutdown flag is set).");
+
                         return;
+                    }
 
                     //
                     // If the listening flag is not set then the socket could not be opened
@@ -954,26 +1311,47 @@ public class CheckValveChatRelay
                     {
                         System.err.println();
 
-                        logger.writeln( "ERROR: Unable to create UDP listening socket." );
-                        System.err.println( "ERROR: Unable to create UDP listening socket." );
-                        logger.writeln( "ERROR: " + se.toString() );
-                        System.err.println( "ERROR: " + se.toString() );
+                        logger.writeln( "[ERROR] Unable to create UDP listening socket." );
+                        System.err.println( "[ERROR] Unable to create UDP listening socket." );
+                        logger.writeln( "[ERROR] " + se.toString() );
+                        System.err.println( "[ERROR] " + se.toString() );
+
+                        if( debugLevel >= 2 )
+                        {
+                            StackTraceElement[] ste = se.getStackTrace();
+
+                            for(int x = 0; x < ste.length; x++)
+                                logger.debug(2, ste[x].toString() );
+                        }
 
                         if( ! shuttingDown )
+                        {
+                            if( debugLevel >= 2 )
+                                logger.debug(2, "Message listener is calling for the program to shut down.");
+
                             System.exit(1);
+                        }
 
                         return;
                     }
                     else
                     {
-                        logger.writeln( "ERROR: Message listener thread caught an exception:" );
-                        logger.writeln( "ERROR: " + se.toString() );
+                        logger.writeln( "[ERROR] Message listener thread caught an exception:" );
+                        logger.writeln( "[ERROR] " + se.toString() );
+
+                        if( debugLevel >= 2 )
+                        {
+                            StackTraceElement[] ste = se.getStackTrace();
+
+                            for(int x = 0; x < ste.length; x++)
+                                logger.debug(2, ste[x].toString() );
+                        }
 
                         if( messageListenerSocket.isClosed() )
                         {
                             listening = false;
-                            logger.writeln( "ERROR: The message listener socket closed unexpectedly." );
-                            logger.writeln( "ERROR: Attempting to restart the message listener." );
+                            logger.writeln( "[ERROR] The message listener socket closed unexpectedly." );
+                            logger.writeln( "[ERROR] Attempting to restart the message listener." );
                         }
                         else
                         {
@@ -983,17 +1361,33 @@ public class CheckValveChatRelay
                 }
                 catch( Exception e )
                 {
-                    if( shuttingDown )
-                        return;
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] caught an exception.");
 
-                    logger.writeln( "ERROR: Message listener thread caught an exception:" );
-                    logger.writeln( "ERROR: " + e.toString() );
+                    if( shuttingDown )
+                    {
+                        if( debugLevel >= 3 )
+                            logger.debug(3, name + " [ID=" + id + "] ignored the exception (shutdown flag is set).");
+
+                        return;
+                    }
+
+                    logger.writeln( "[ERROR] Message listener thread caught an exception:" );
+                    logger.writeln( "[ERROR] " + e.toString() );
+
+                    if( debugLevel >= 2 )
+                    {
+                        StackTraceElement[] ste = e.getStackTrace();
+
+                        for(int x = 0; x < ste.length; x++)
+                            logger.debug(2, ste[x].toString() );
+                    }
 
                     if( clientListenerSocket.isClosed() )
                     {
                         listening = false;
-                        logger.writeln( "ERROR: The client listener socket closed unexpectedly." );
-                        logger.writeln( "ERROR: Attempting to restart the client listener." );
+                        logger.writeln( "[ERROR] The client listener socket closed unexpectedly." );
+                        logger.writeln( "[ERROR] Attempting to restart the client listener." );
                     }
                     else
                     {
@@ -1033,15 +1427,26 @@ public class CheckValveChatRelay
                     // Get the data from the packet
                     data = new String(buffer, 0, packet.getLength(), "UTF-8");
 
-                    if( (data.indexOf("\" say \"") != -1) || (data.indexOf("\" say_team \"") != -1) )
+                    if( (data.indexOf(" say ") != -1) || (data.indexOf(" say_team ") != -1) )
                     {
                         // Get the remote address and remote port from the packet
                         messageInfo[0] = packet.getAddress().getHostAddress();
                         messageInfo[1] = Integer.valueOf(packet.getPort()).toString();
 
+                        if( debugLevel >= 1 )
+                            logger.debug(1, "[id=" + totalPackets + "] This appears to be a chat message from " + messageInfo[0] + ":" + messageInfo[1] + ".");
+
                         // Only continue processing if a client wants messages from this game server
                         if( ! isWanted(messageInfo[0], messageInfo[1]) )
+                        {
+                            if( debugLevel >= 1 )
+                                logger.debug(1, "[id=" + totalPackets + "] No client wants this message.");
+
                             continue;
+                        }
+
+                        if( debugLevel >= 1 )
+                            logger.debug(1, "[id=" + totalPackets + "] At least one client wants this message.");
 
                         while( newMessage ) Thread.sleep(10);
 
@@ -1049,83 +1454,170 @@ public class CheckValveChatRelay
                         messageBody.clear();
                         messageData.clear();
 
-                        // Extract the message data from the packet
-                        message = data.substring(5, data.length()-1);
-                        //message = data.substring(0, data.length()-1);
+                        // Extract the log message from the packet
+                        message = data.substring(data.indexOf("L "), data.length()-1);
 
-                        // Tokenize the message string
-                        tokens = message.split( "<[0-9]+><STEAM_(\\d:\\d:\\d+)>" );
+                        // See if this message matches the SRCDS console chat pattern
+                        m = srcdsConsoleMessage.matcher(message);
 
-                        //
-                        // TOKENS:
-                        //    [0]: L MM/DD/YYYY - HH:MM:SS: "PLAYERNAME
-                        //    [1]: <TEAM>< ... other stuff ... >" say "MESSAGE"
-                        //
-
-                        //
-                        // Double-check that this is a chat message before sending it to the client
-                        // (to avoid being fooled by a player name with 'say' or 'say_team' in it).
-                        //
-                        if( (tokens[1].indexOf("\" say \"") != -1) || (tokens[1].indexOf("\" say_team \"") != -1) )
+                        if( m.find() )
                         {
-                            // Find the end of the timestamp in the message
-                            if( (idx = tokens[0].indexOf(": \"")) == -1 )
-                                continue;
+                            /*
+                             * SRCDS console chat message
+                             */
+
+                            if( debugLevel >= 2 )
+                                logger.debug(2, "[id=" + totalPackets + "] This appears to be a SRCDS console message.");
+
+                            playerName = "Console";
+                            playerTeam = "Console";
+                            playerSays = message.replaceAll( "(.*) say ", "" ).trim();
+                            isSayTeam = BYTE_ZERO;
+
+                            idx = message.indexOf(": \"Console<0>");
 
                             // Get the date and time from the message
-                            messageTimestamp = tokens[0].substring(0, idx);
+                            messageTimestamp = message.substring(0, idx);
 
                             // Remove the leading "L" from the message
-                            if( messageTimestamp.startsWith("L ") )
-                                messageTimestamp = messageTimestamp.replaceFirst( "L ", "" );
+                            messageTimestamp = messageTimestamp.replaceFirst( "L ", "" );
+                        }
+                        else
+                        {
+                            // See if this message matches the HLDS console chat pattern
+                            m = hldsConsoleMessage.matcher(message);
 
-                            // Get the player's name, team, and full message string
-                            String playerName = tokens[0].substring( (tokens[0].indexOf("\"")+1), tokens[0].length() );
-                            String playerTeam = tokens[1].substring( 1, tokens[1].indexOf(">") );
-                            String playerSays = tokens[1].trim();
-
-                            // Set the 'isSayTeam' byte and extract the actual message text from the string
-                            if( tokens[1].indexOf("\" say \"") != -1 )
+                            if( m.find() )
                             {
+                                /*
+                                 * HLDS console chat message
+                                 */
+
+                                if( debugLevel >= 2 )
+                                    logger.debug(2, "[id=" + totalPackets + "] This appears to be an HLDS console message.");
+
+                                playerName = "Console";
+                                playerTeam = "Console";
+                                playerSays = message.replaceAll( "(.*) say ", "" ).trim();
                                 isSayTeam = BYTE_ZERO;
-                                playerSays = playerSays.replaceAll( "(.*) say ", "" );
+
+                                // Find the end of the timestamp in the message
+                                idx = message.indexOf(": Server ");
+
+                                // Get the date and time from the message
+                                messageTimestamp = message.substring(0, idx);
+
+                                // Remove the leading "L" from the timestamp
+                                messageTimestamp = messageTimestamp.replaceFirst( "L ", "" );
                             }
                             else
                             {
-                                isSayTeam = BYTE_ONE;
-                                playerSays = playerSays.replaceAll( "(.*) say_team ", "" );
+                                /*
+                                 * Not a console chat message
+                                 */
+
+                                if( debugLevel >= 2 )
+                                    logger.debug(2, "[id=" + totalPackets + "] This is not a console message.");
+
+                                // Tokenize the message as a player chat
+                                tokens = message.split( "<[0-9]+><STEAM_(\\d:\\d:\\d+)>" );
+
+                                //
+                                // TOKENS:
+                                //    [0]: L MM/DD/YYYY - HH:MM:SS: "PLAYERNAME
+                                //    [1]: <TEAM>< ... other stuff ... >" say "MESSAGE"
+                                //
+
+                                // Avoid being fooled by a player name with 'say' or 'say_team' in it.
+                                if( tokens[1].indexOf(" say ") == -1 && tokens[1].indexOf(" say_team ") == -1 )
+                                {
+                                    if( debugLevel >= 1 )
+                                    {
+                                        logger.debug(1, "[id=" + totalPackets + "] Failed to find 'say' or 'say_team' after parsing message data.");
+                                        logger.debug(1, "[id=" + totalPackets + "] This is not actually a chat message.");
+                                    }
+
+                                    continue;
+                                }
+
+                                // Find the end of the timestamp in the message
+                                if( (idx = tokens[0].indexOf(": \"")) == -1 )
+                                {
+                                    if( debugLevel >= 1 )
+                                    {
+                                        logger.debug(1, "[id=" + totalPackets + "] Failed to find timestamp boundary after parsing message data.");
+                                        logger.debug(1, "[id=" + totalPackets + "] This is not actually a chat message.");
+                                    }
+
+                                    continue;
+                                }
+
+                                // Get the date and time from the message
+                                messageTimestamp = tokens[0].substring(0, idx);
+
+                                // Remove the leading "L" from the message
+                                messageTimestamp = messageTimestamp.replaceFirst( "L ", "" );
+
+                                // Get the player's name, team, and full message string
+                                playerName = tokens[0].substring( (tokens[0].indexOf("\"")+1), tokens[0].length() );
+                                playerTeam = tokens[1].substring( 1, tokens[1].indexOf(">") );
+                                playerSays = tokens[1].trim();
+
+                                // Set the 'isSayTeam' byte and extract the actual message text from the string
+                                if( tokens[1].indexOf("\" say \"") != -1 )
+                                {
+                                    isSayTeam = BYTE_ZERO;
+                                    playerSays = playerSays.replaceAll( "(.*) say ", "" );
+
+                                    if( debugLevel >= 3 )
+                                        logger.debug(3, "[id=" + totalPackets + "] This is not a say_team message.");
+                                }
+                                else
+                                {
+                                    isSayTeam = BYTE_ONE;
+                                    playerSays = playerSays.replaceAll( "(.*) say_team ", "" );
+
+                                    if( debugLevel >= 3 )
+                                        logger.debug(3, "[id=" + totalPackets + "] This is a say_team message.");
+                                }
                             }
-
-                            // Strip the leading and trailing quotes from the chat message
-                            playerSays = playerSays.replaceAll( "^\"","" ).replaceAll( "\"$","" );
-
-                            // Include the current timestamp in case the one in the message is mangled
-                            serverTimestamp = (int) (System.currentTimeMillis()/1000);
-
-                            // Increment the chat packets counter
-                            chatPackets++;
-
-                            messageBody.putInt(serverTimestamp);
-                            messageBody.put(isSayTeam);
-                            messageBody.put(messageInfo[0].getBytes("UTF-8")).put(BYTE_ZERO);
-                            messageBody.put(messageInfo[1].getBytes("UTF-8")).put(BYTE_ZERO);
-                            messageBody.put(messageTimestamp.getBytes("UTF-8")).put(BYTE_ZERO);
-                            messageBody.put(playerName.getBytes("UTF-8")).put(BYTE_ZERO);
-                            messageBody.put(playerTeam.getBytes("UTF-8")).put(BYTE_ZERO);
-                            messageBody.put(playerSays.getBytes("UTF-8")).put(BYTE_ZERO);
-                            messageBody.flip();
-
-                            // Assemble the packet data
-                            messageData.putInt(PACKET_HEADER);
-                            messageData.put(PTYPE_MESSAGE_DATA);
-                            messageData.putShort((short)messageBody.limit());
-                            messageData.put(PROTOCOL_VERSION);
-                            messageData.put(messageBody);
-                            messageData.flip();
-
-                            // Set the new message flag
-                            newMessage = true;
                         }
+
+                        // Strip the leading and trailing quotes from the chat message
+                        playerSays = playerSays.replaceAll( "^\"","" ).replaceAll( "\"$","" );
+
+                        // Include the current timestamp in case the one in the message is mangled
+                        serverTimestamp = (int) (System.currentTimeMillis()/1000);
+
+                        // Increment the chat packets counter
+                        chatPackets++;
+
+                        if( debugLevel >= 3 )
+                            logger.debug(3, "Incremented the chat packets counter to " + chatPackets + ".");
+
+                        messageBody.putInt(serverTimestamp);
+                        messageBody.put(isSayTeam);
+                        messageBody.put(messageInfo[0].getBytes("UTF-8")).put(BYTE_ZERO);
+                        messageBody.put(messageInfo[1].getBytes("UTF-8")).put(BYTE_ZERO);
+                        messageBody.put(messageTimestamp.getBytes("UTF-8")).put(BYTE_ZERO);
+                        messageBody.put(playerName.getBytes("UTF-8")).put(BYTE_ZERO);
+                        messageBody.put(playerTeam.getBytes("UTF-8")).put(BYTE_ZERO);
+                        messageBody.put(playerSays.getBytes("UTF-8")).put(BYTE_ZERO);
+                        messageBody.flip();
+
+                        // Assemble the packet data
+                        messageData.putInt(PACKET_HEADER);
+                        messageData.put(PTYPE_MESSAGE_DATA);
+                        messageData.putShort((short)(messageBody.limit()+1));
+                        messageData.put(PROTOCOL_VERSION);
+                        messageData.put(messageBody);
+                        messageData.flip();
+
+                        // Set the new message flag
+                        newMessage = true;
+
+                        if( debugLevel >= 3 )
+                            logger.debug(3, "Set the new message flag.");
                     }
                 }
             }
@@ -1151,34 +1643,56 @@ public class CheckValveChatRelay
     private static class SendChatMessage implements Runnable
     {
         private int i = 0;
+        private long id = 0;
+        private String name = new String();
 
         public void run()
         {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
             try
             {
                 for(;;)
                 {
                     while( ! newMessage ) Thread.sleep(100);
 
+                    if( debugLevel >= 3 )
+                        logger.debug(3, "New message flag is set, processing new outgoing message.");
+
                     // Send the message to the clients
                     for( i = 0; i < maxClients; i++ )
                     {
                         if( connections[i].isAlive() )
+                        {
                             if( connections[i].getWantsIP().equals(messageInfo[0]) )
+                            {
                                 if( connections[i].getWantsPort().equals(messageInfo[1]) )
+                                {
                                     connections[i].send(messageData.array(), 0, messageData.limit());
+
+                                    if( debugLevel >= 2 )
+                                        logger.debug(2, "Sent this message to " + connections[i].getClientString() + ".");
+                                }
+                            }
+                        }
                     }
 
                     // Clear the new message flag
                     newMessage = false;
+
+                    if( debugLevel >= 3 )
+                        logger.debug(3, "Cleared the new message flag.");
                 }
             }
             catch( InterruptedException ie )
             {
-                return;
-            }
-            finally
-            {
+                if( debugLevel >= 3 )
+                    logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
                 return;
             }
         }
@@ -1192,8 +1706,17 @@ public class CheckValveChatRelay
         private int i = 0;
         private String clientString;
 
+        private long id = 0;
+        private String name = new String();
+
         public void run()
         {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
             try
             {
                 for(;;)
@@ -1218,10 +1741,9 @@ public class CheckValveChatRelay
             }
             catch( InterruptedException ie )
             {
-                return;
-            }
-            finally
-            {
+                if( debugLevel >= 3 )
+                    logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
                 return;
             }
         }
@@ -1244,8 +1766,17 @@ public class CheckValveChatRelay
         private String uptimeMessage = new String();
         private String memoryMessage = new String();
 
+        private long id = 0;
+        private String name = new String();
+
         public void run()
         {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
             for(;;)
             {
                 try
@@ -1295,12 +1826,26 @@ public class CheckValveChatRelay
                 }
                 catch( InterruptedException ie )
                 {
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
                     return;
                 }
                 catch( Exception e )
                 {
-                    logger.writeln( "ERROR: LogStats thread caught an exception:" );
-                    logger.writeln( "ERROR: " + e.toString() );
+                    if( debugLevel >= 3 )
+                        logger.debug(3, name + " [ID=" + id + "] caught an exception.");
+
+                    logger.writeln( "[ERROR] LogStats thread caught an exception:" );
+                    logger.writeln( "[ERROR] " + e.toString() );
+
+                    if( debugLevel >= 2 )
+                    {
+                        StackTraceElement[] ste = e.getStackTrace();
+
+                        for(int x = 0; x < ste.length; x++)
+                            logger.debug(2, ste[x].toString() );
+                    }
                 }
             }
         }
@@ -1317,8 +1862,17 @@ public class CheckValveChatRelay
         private long exp;
 	private long now;
 
+        private long id = 0;
+        private String name = new String();
+
         public void run()
         {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
             try
             {
                 for(;;)
@@ -1348,10 +1902,9 @@ public class CheckValveChatRelay
             }
             catch( InterruptedException ie )
             {
-                return;
-            }
-            finally
-            {
+                if( debugLevel >= 3 )
+                    logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
                 return;
             }
         }
@@ -1365,8 +1918,17 @@ public class CheckValveChatRelay
         private static File baseFile = new File(logFile);
 	private static File[] logFiles = new File[logRotateKeepFiles];
 
+        private long id = 0;
+        private String name = new String();
+
         public void run()
         {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
             try
             {
                 int i = 0;
@@ -1391,10 +1953,9 @@ public class CheckValveChatRelay
             }
             catch( InterruptedException ie )
             {
-                return;
-            }
-            finally
-            {
+                if( debugLevel >= 3 )
+                    logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
                 return;
             }
         }
@@ -1464,7 +2025,7 @@ public class CheckValveChatRelay
             }
         }
 
-        public static void write(String msg)
+        public static void debug(int level, String msg)
         {
             try
             {
@@ -1472,8 +2033,8 @@ public class CheckValveChatRelay
                 if( ! open )
                     return;
 
-                // Write a timestamped message to the log file
-                out.write(sdf.format(System.currentTimeMillis()) + msg);
+                // Write a timestamped debug message to the log file
+                out.write(sdf.format(System.currentTimeMillis()) + "[DEBUG(" + level + ")] " + msg + eol);
                 out.flush();
             }
             catch( IOException ioe )
@@ -1490,7 +2051,7 @@ public class CheckValveChatRelay
                 if( ! open )
                     return;
 
-                // Write a timestamped message to the log file and append the line separator
+                // Write a timestamped message to the log file
                 out.write(sdf.format(System.currentTimeMillis()) + msg + eol);
                 out.flush();
             }
@@ -1544,8 +2105,8 @@ public class CheckValveChatRelay
             }
             catch( Exception e )
             {
-                logger.writeln( "ERROR: Failed to create connection object for client." );
-                logger.writeln( "ERROR: " + e.toString() );
+                logger.writeln( "[ERROR] Failed to create connection object for client." );
+                logger.writeln( "[ERROR] " + e.toString() );
                 this.interrupt();
             }
         }
@@ -1627,8 +2188,8 @@ public class CheckValveChatRelay
             }
             catch( Exception e )
             {
-                logger.writeln( "ERROR: Failed to flush socket input buffer of client " + clientString + "." );
-                logger.writeln( "ERROR: " + e.toString() );
+                logger.writeln( "[ERROR] Failed to flush socket input buffer of client " + clientString + "." );
+                logger.writeln( "[ERROR] " + e.toString() );
                 return;
             }
         }

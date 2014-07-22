@@ -17,6 +17,27 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+/*
+ * PROGRAM:
+ * ChatLogger.java
+ *
+ * DESCRIPTION:
+ * Connect to a CheckValve Chat Relay and print messges from the
+ * specified game server.
+ *
+ * AUTHOR:
+ * Dave Parker
+ *
+ * CHANGE LOG:
+ *
+ * November 14, 2013
+ * - Initial release.
+ *
+ * July 3, 2014
+ * - Version 1.1.
+ * - Removed short options from usage summary for brevity.
+ */
+
 import java.io.*;
 import java.util.Date;
 import java.text.SimpleDateFormat;
@@ -30,6 +51,8 @@ import java.nio.channels.SocketChannel;
 
 public class ChatLogger
 {
+    final static String PROGRAM_VERSION = "1.1";
+
     final static int PACKET_HEADER = 0xFFFFFFFF;
     final static byte PTYPE_IDENTITY_STRING = (byte) 0x00;
     final static byte PTYPE_HEARTBEAT = (byte) 0x01;
@@ -173,6 +196,11 @@ public class ChatLogger
                 else if( args[i].equals("-q") || args[i].equals("--quiet") )
                 {
                     quietMode = true;
+                }
+                else if( args[i].equals("-h") || args[i].equals("--help") )
+                {
+                    usage();
+                    System.exit(0);
                 }
                 else
                 {
@@ -377,9 +405,10 @@ public class ChatLogger
 
     private static void usage()
     {
+        System.out.println("ChatLogger version " + PROGRAM_VERSION);
         System.out.println();
-        System.out.println("Usage: java ChatLogger [-c|--chat-relay <ip>:<port>] [-g|--game-server <ip>:<port>] [-l|--limit <num>] [-p|--password <password>] [-q|--quiet]");
-        System.out.println("       java ChatLogger [-h|--help]");
+        System.out.println("Usage: java ChatLogger [--chat-relay <ip>:<port>] [--game-server <ip>:<port>] [--limit <num>] [--password <password>] [--quiet]");
+        System.out.println("       java ChatLogger [--help]");
         System.out.println();
         System.out.println("Command line options:");
         System.out.println("    -c|--chat-relay <ip>:<port>   Connect to the CheckValve Chat Relay at the specified IP and port (required).");

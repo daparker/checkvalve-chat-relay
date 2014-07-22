@@ -20,7 +20,7 @@ this, run the following commands:
 NOTE: The Java classes do not need to be executable.
 
 --------------------------------------------------------------------------------
-2. UDP Message Emitter
+2. UDP Message Emitter (version 2.0)
 --------------------------------------------------------------------------------
 
 You can the invoke the UDP message emitter using the Perl version:
@@ -52,6 +52,8 @@ change the settings, you can use one or more of the options below:
     -s | --sayteam           Make this a say_team message
                              (default = say)
 
+    -c | --console           Make this a SRCDS console message
+
     -h | --help              Show this help text and exit
 
 NOTE: When using the --from option, the address must be assigned to an available
@@ -69,7 +71,7 @@ this command:
         -m "This is a test!"
 
 --------------------------------------------------------------------------------
-3. Chat Logger
+3. Chat Logger (version 1.1)
 --------------------------------------------------------------------------------
 
 The chat logger will connect to a CheckValve Chat Relay server and print the

@@ -1,0 +1,46 @@
+INSTALLATION:
+
+In the steps below, please use the following substitutions:
+
+* Replace <INSTALL_PATH> with the actual path under which you
+  are installing the Chat Relay (ex: /usr/local).
+
+* Replace VERSION with the version number (ex: 1.1.0)
+
+* Replace XYZ with "amd64-jre", "i586-jre", or "noarch" depending on which file
+  you downloaded.
+
+1. Extract the tar file:
+
+    cd <INSTALL_PATH>
+    tar -zxvf checkvalvechatrelay-VERSION-linux-XYZ.tar.gz
+
+2. Edit the following scripts and set the value of the BASEDIR variable in each:
+
+    <INSTALL_PATH>/checkvalvechatrelay-VERSION/bin/start.sh
+    <INSTALL_PATH>/checkvalvechatrelay-VERSION/bin/stop.sh
+    <INSTALL_PATH>/checkvalvechatrelay-VERSION/etc/init.d/checkvalvechatrelay
+
+3. Optionally set the CONFIG_FILE variable in one of these scripts:
+
+    <INSTALL_PATH>/checkvalvechatrelay-VERSION/bin/start.sh
+    <INSTALL_PATH>/checkvalvechatrelay-VERSION/etc/init.d/checkvalvechatrelay
+
+    NOTE: This is only necessary if you wish to run the CheckValve Chat Relay
+          with a properties file other than the default.
+
+4. Edit the properties file to configure the Chat Relay (by default this is
+   <INSTALL_PATH>/checkvalvechatrelay-VERSION/checkvalvechatrelay.properties)
+
+5. Start the chat relay:
+
+    cd <INSTALL_PATH>/checkvalvechatrelay-VERSION/etc/init.d
+    ./checkvalvechatrelay start
+
+6. If you would like the Chat Relay to start when the system boots, run the
+   following as root (or use 'sudo'):
+
+    cd <INSTALL_PATH>/checkvalvechatrelay-VERSION/etc/init.d
+    cp checkvalvechatrelay /etc/init.d
+    insserv checkvalvechatrelay
+

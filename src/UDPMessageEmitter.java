@@ -17,7 +17,31 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+/*
+ * PROGRAM:
+ * UDPMessageEmitter.java
+ *
+ * DESCRIPTION:
+ * Emit a simulated SRCDS log message via UDP for the purpose of testing the
+ * CheckValve Chat Relay.
+ *
+ * AUTHOR:
+ * Dave Parker
+ *
+ * CHANGE LOG:
+ *
+ * November 14, 2013
+ * - Initial release.
+ *
+ * July 1, 2014
+ * - Version 2.0.
+ * - Added option and code to send a simulated SRCDS console message.
+ * - Removed short options from usage summary for brevity.
+ */
+
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.text.SimpleDateFormat;
 import java.net.DatagramSocket;
 import java.net.DatagramPacket;
@@ -26,9 +50,12 @@ import java.net.UnknownHostException;
 
 public class UDPMessageEmitter
 {
+    final static String PROGRAM_VERSION = "2.0";
+
     static InetAddress peerHost;
     static InetAddress localHost;
     static boolean sayTeam;
+    static boolean console;
     static String text;
     static String say;
     static int localPort;
@@ -38,7 +65,7 @@ public class UDPMessageEmitter
 
     public static void main(String args[])
     {
-        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy - HH:mm:ss");
+        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yyyy - HH:mm:ss");
 
         try
         {
@@ -48,6 +75,7 @@ public class UDPMessageEmitter
             peerHost = InetAddress.getByName("127.0.0.1");
             peerPort = 12345;
             sayTeam = false;
+            console = false;
             limit = 0;
             delay = 1;
             text = "This is a test!";
@@ -57,11 +85,20 @@ public class UDPMessageEmitter
 
             String data = new String();
 
-            data.concat("\u00FF\u00FF\u00FF\u00FF\u0052");
-            data.concat("L " + sdf.format(System.currentTimeMillis()) + ": ");
-            data.concat("\"SomePlayer<99><STEAM_1:1:01234567>");
-            data.concat("<Survivor><Biker><ALIVE><80+0><setpos_exact 5033.42 -13677.53 -1.97; setang -0.53 175.02 0.00><Area 76076>\" ");
-            data.concat(say  + " \"" + text + "\"");
+            //data = data.concat("\u00FF\u00FF\u00FF\u00FF\u0052");
+            data = data.concat("L " + sdf.format(System.currentTimeMillis()) + ": ");
+
+            if( console )
+            {
+                data = data.concat("\"Console<0><Console><Console>\" ");
+            }
+            else
+            {
+                data = data.concat("\"SomePlayer<99><STEAM_1:1:01234567>");
+                data = data.concat("<Survivor><Biker><ALIVE><80+0><setpos_exact 5033.42 -13677.53 -1.97; setang -0.53 175.02 0.00><Area 76076>\" ");
+            }
+
+            data = data.concat(say  + " \"" + text + "\"");
 
             sendMessage(data);
         }
@@ -225,6 +262,10 @@ public class UDPMessageEmitter
             {
                 sayTeam = true;
             }
+            else if( args[i].equals("-c") || args[i].equals("--console") )
+            {
+                console = true;
+            }
             else if( args[i].equals("-h") || args[i].equals("--help") )
             {
                 usage();
@@ -246,12 +287,19 @@ public class UDPMessageEmitter
     {
         try
         {
-            byte[] buffer = data.getBytes();
+            byte[] buffer = new byte[256];
+            ByteBuffer bb = ByteBuffer.wrap(buffer);
 
-            DatagramSocket socket = new DatagramSocket(localPort, localHost);
-            DatagramPacket datagram = new DatagramPacket(buffer, buffer.length, peerHost, peerPort);
+            bb.order(ByteOrder.LITTLE_ENDIAN);
+            bb.putInt(0xFFFFFFFF);
+            bb.put((byte)0x52);
+            bb.put(data.getBytes("UTF-8"));
+            bb.flip();
 
-            socket.connect(peerHost, peerPort);
+            DatagramSocket s = new DatagramSocket(localPort, localHost);
+            DatagramPacket d = new DatagramPacket(bb.array(), bb.position(), bb.limit(), peerHost, peerPort);
+
+            s.connect(peerHost, peerPort);
 
             int sent = 0;
 
@@ -260,13 +308,13 @@ public class UDPMessageEmitter
                 if( limit > 0 && sent >= limit )
                     break;
 
-                socket.send(datagram);
+                s.send(d);
                 Thread.sleep(delay*1000);
 
                 sent++;
             }
 
-            socket.close();
+            s.close();
         }
         catch( Exception e )
         {
@@ -278,17 +326,20 @@ public class UDPMessageEmitter
 
     private static void usage()
     {
+        String eol = System.getProperty( "line.separator" );
         String usage = new String();
 
         usage = usage.concat("Usage: java UDPMessageEmitter ");
-        usage = usage.concat("[-t|--to <ip>:<port>] ");
-        usage = usage.concat("[-f|--from <ip>:<port>] ");
-        usage = usage.concat("[-d|--delay <num>] ");
-        usage = usage.concat("[-l|--limit <num>] ");
-        usage = usage.concat("[-m|--message <string>] ");
-        usage = usage.concat("[-s|--sayteam]\n");
-        usage = usage.concat("       java UDPMessageEmitter [h|--help]");
+        usage = usage.concat("[--to <ip>:<port>] ");
+        usage = usage.concat("[--from <ip>:<port>] ");
+        usage = usage.concat("[--delay <num>] ");
+        usage = usage.concat("[--limit <num>] ");
+        usage = usage.concat("[--message <string>] ");
+        usage = usage.concat("[--sayteam] ");
+        usage = usage.concat("[--console]" + eol);
+        usage = usage.concat("       java UDPMessageEmitter [--help]");
 
+        System.out.println("UDPMessageEmitter version " + PROGRAM_VERSION);
         System.out.println();
         System.out.println(usage);
         System.out.println();
@@ -299,8 +350,10 @@ public class UDPMessageEmitter
         System.out.println("    -l|--limit <num>       Stop after sending <num> messages (default = no limit)");
         System.out.println("    -m|--message <string>  Send <string> as the message text (default = \"This is a test!\")");
         System.out.println("    -s|--sayteam           Make this a say_team message (default = say)");
+        System.out.println("    -c|--console           Make this a SRCDS console message");
         System.out.println("    -h|--help              Show this help text and exit");
         System.out.println();
-        System.out.println("NOTE: When using the --from option, the address must be assigned to an available network interface.\n");
+        System.out.println("NOTE: When using the --from option, the address must be assigned to an available network interface.");
+        System.out.println();
     }
 }

@@ -19,9 +19,30 @@
 # <http://www.gnu.org/licenses/>.
 #
 
+##
+#
+# PROGRAM:
+# start.sh
+#
+# DESCRIPTION:
+# Start an instance of CheckValve Chat Relay as a background daemon.
+#
+# AUTHOR:
+# Dave Parker
+#
+# CHANGE LOG:
+#
+# November 14, 2013
+# - Initial release.
+#
+# July 18, 2014
+# - Added $CONFIG_FILE and the '--config' option for specifying the
+#   configuration file.
+#
+
 short_usage()
 {
-    echo "Usage: $0 [--minheap <size>] [--maxheap <size>] [--debug [--debughost <ip>] [--debugport <port>]]"
+    echo "Usage: $0 [--config <file>] [--minheap <size>] [--maxheap <size>] [--debug [--debughost <ip>] [--debugport <port>]]"
     echo "       $0 [--help|-h|-?]"
 }
 
@@ -32,6 +53,7 @@ long_usage()
     echo
     echo "Command-line options:"
     echo
+    echo "  --config <file>     Read config from <file> [default = ${CONFIG_FILE}]"
     echo "  --minheap <size>    Set the JVM's minimum heap size to <size> [default = ${JVM_MIN_MEM}]"
     echo "  --maxheap <size>    Set the JVM's maximum heap size to <size> [default = ${JVM_MAX_MEM}]"
     echo "  --debug             Enable the Java debugging listener (for use with jdb)"
@@ -46,22 +68,30 @@ long_usage()
 
 start_debug()
 {
+    cd ${BASEDIR}
+
     # Set the JVM debugging options
     DEBUG_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${DEBUG_HOST}:${DEBUG_PORT}"
 
     # Start CheckValve Chat Relay with debug options and save its PID to the PID file
-    ${JAVA_BIN} ${DEBUG_OPTS} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} >/dev/null &
+    ${JAVA_BIN} ${DEBUG_OPTS} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} -c ${CONFIG_FILE} >/dev/null &
     echo "$!" > ${PIDFILE}
     echo "Started CheckValve Chat Relay."
     echo "(Debugging mode is enabled, connect jdb to ${DEBUG_HOST}:${DEBUG_PORT} for debugging)."
+
+    cd ${OLD_PWD}
 }
 
 start_no_debug()
 {
+    cd ${BASEDIR}
+
     # Start CheckValve Chat Relay and save its PID to the PID file
-    ${JAVA_BIN} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} &
+    ${JAVA_BIN} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} -c ${CONFIG_FILE} &
     echo "$!" > ${PIDFILE}
     echo "Started CheckValve Chat Relay."
+
+    cd ${OLD_PWD}
 }
 
 ##
@@ -69,6 +99,12 @@ start_no_debug()
 # CheckValve Chat Relay base directory
 #
 BASEDIR="/usr/local/CheckValveChatRelay"
+
+##
+#
+# Default configuration file
+#
+CONFIG_FILE="checkvalvechatrelay.properties"
 
 ##
 #
@@ -119,6 +155,15 @@ JAVA_BIN=$(which java)
 # Set options from the command line
 while [ "$1" ] ; do
     case $(echo "$1" | tr A-Z a-z) in
+        '--config')
+            if [ ! $2 ] ; then
+                echo "You must supply a value for --config"
+                short_usage
+                exit 1
+            fi
+            CONFIG_FILE="$2"
+            shift ; shift
+            ;;
         '--debug')
             DEBUG="1"
             shift

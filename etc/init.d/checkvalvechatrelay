@@ -20,6 +20,26 @@
 #
 ##
 
+##
+#
+# PROGRAM:
+# checkvalvechatrelay
+#
+# DESCRIPTION:
+# Init script for starting/stopping CheckValve Chat Relay.
+#
+# AUTHOR:
+# Dave Parker
+#
+# CHANGE LOG:
+#
+# November 14, 2013
+# - Initial release.
+#
+# July 18, 2014
+# - Added $CONFIG_FILE for specifying a configuration file.
+#
+
 ### BEGIN INIT INFO
 # Provides:          checkvalvechatrelay
 # Required-Start:    $local_fs $network
@@ -35,6 +55,13 @@ JARFILE="${BASEDIR}/lib/checkvalvechatrelay.jar"
 PIDFILE="${BASEDIR}/checkvalvechatrelay.pid"
 START="${BASEDIR}/bin/start.sh"
 STOP="${BASEDIR}/bin/stop.sh"
+
+##
+#
+# Set $CONFIG_FILE if you wish to use a configuration file
+# other than the default (checkvalvechatrelay.properties)
+#
+#CONFIG_FILE=
 
 usage()
 {
@@ -94,6 +121,10 @@ if [ ! -x ${STOP} ] ; then
     echo "ERROR: ${STOP} is not executable."
     echo
     exit 1
+fi
+
+if [ ! -z "${CONFIG_FILE}" ] ; then
+    START="${START} --config ${CONFIG_FILE}"
 fi
 
 cd ${BASEDIR} || exit 1

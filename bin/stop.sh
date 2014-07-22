@@ -22,6 +22,23 @@
 
 ##
 #
+# PROGRAM:
+# stop.sh
+#
+# DESCRIPTION:
+# Stop an instance of CheckValve Chat Relay.
+#
+# AUTHOR:
+# Dave Parker
+#
+# CHANGE LOG:
+#
+# November 14, 2013
+# - Initial release.
+#
+
+##
+#
 # CheckValve Chat Relay base directory
 #
 BASEDIR="/usr/local/CheckValveChatRelay"

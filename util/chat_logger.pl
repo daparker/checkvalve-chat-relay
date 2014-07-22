@@ -31,8 +31,13 @@
 # Dave Parker
 #
 # CHANGE LOG:
+#
 # November 14, 2013
 # - Initial release.
+#
+# July 3, 2014:
+# - Version 1.1.
+# - Removed short options from usage summary for brevity.
 #
 
 $|++;
@@ -41,6 +46,8 @@ use strict;
 use POSIX;
 use IO::Socket;
 use Getopt::Long;
+
+my $PROGRAM_VERSION = "1.1";
 
 use constant {
 	PACKET_HEADER            => "\xff\xff\xff\xff",
@@ -225,9 +232,10 @@ sub getChatMessages {
 
 sub usage {
 	print <<EOT
+chat_logger.pl version $PROGRAM_VERSION
 
-Usage: $prog [-c|--chat-relay <ip>:<port>] [-g|--game-server <ip>:<port>] [-l|--limit <num>] [-p|--password <password>] [-q|--quiet]
-       $prog [-h|--help]
+Usage: $prog [--chat-relay <ip>:<port>] [--game-server <ip>:<port>] [--limit <num>] [--password <password>] [--quiet]
+       $prog [--help]
 
 Command line options:
     -c|--chat-relay <ip>:<port>   Connect to the CheckValve Chat Relay at the specified IP and port (required).
