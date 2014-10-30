@@ -22,3 +22,7 @@ Change Log
 - Added `debugLevel` option for more verbose logging.
 - Added code for additional logging based on the value of `debugLevel`.
 
+**Version 1.2.0**
+- Added support for the new SteamID format
+- Fixed some default option values not matching the defaults listed in the checkvalvechatrelay.properties file.
+

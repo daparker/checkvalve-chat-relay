@@ -39,6 +39,10 @@
 # - Added $CONFIG_FILE and the '--config' option for specifying the
 #   configuration file.
 #
+# October 30, 2014
+# - Added static default values for variables. 
+# - Added a check for the existance of $BASEDIR.
+#
 
 short_usage()
 {
@@ -53,12 +57,12 @@ long_usage()
     echo
     echo "Command-line options:"
     echo
-    echo "  --config <file>     Read config from <file> [default = ${CONFIG_FILE}]"
-    echo "  --minheap <size>    Set the JVM's minimum heap size to <size> [default = ${JVM_MIN_MEM}]"
-    echo "  --maxheap <size>    Set the JVM's maximum heap size to <size> [default = ${JVM_MAX_MEM}]"
+    echo "  --config <file>     Read config from <file> [default = ${DEF_CONFIG_FILE}]"
+    echo "  --minheap <size>    Set the JVM's minimum heap size to <size> [default = ${DEF_JVM_MIN_MEM}]"
+    echo "  --maxheap <size>    Set the JVM's maximum heap size to <size> [default = ${DEF_JVM_MAX_MEM}]"
     echo "  --debug             Enable the Java debugging listener (for use with jdb)"
-    echo "  --debughost <ip>    IP for jdb connections if debugging is enabled [default = ${DEBUG_HOST}]"
-    echo "  --debugport <port>  Port for jdb connections if debugging is enabled [default = ${DEBUG_PORT}]"
+    echo "  --debughost <ip>    IP for jdb connections if debugging is enabled [default = ${DEF_DEBUG_HOST}]"
+    echo "  --debugport <port>  Port for jdb connections if debugging is enabled [default = ${DEF_DEBUG_PORT}]"
     echo "  --help | -h | -?    Show this help text and exit"
     echo
     echo "Note: For --minheap and --maxheap, the <size> value should be a number followed by k, m, or g"
@@ -104,28 +108,33 @@ BASEDIR="/usr/local/CheckValveChatRelay"
 #
 # Default configuration file
 #
-CONFIG_FILE="checkvalvechatrelay.properties"
+DEF_CONFIG_FILE="checkvalvechatrelay.properties"
+CONFIG_FILE=${DEF_CONFIG_FILE}
 
 ##
 #
 # Default debugging options
 #
+DEF_DEBUG_HOST="localhost"
+DEF_DEBUG_PORT="1044"
 DEBUG="0"
-DEBUG_HOST="localhost"
-DEBUG_PORT="1044"
 DEBUG_OPTS=""
+DEBUG_HOST=${DEF_DEBUG_HOST}
+DEBUG_PORT=${DEF_DEBUG_PORT}
 
 ##
 #
 # Default minimum heap size for CheckValve Chat Relay
 #
-JVM_MIN_MEM="8m"
+DEF_JVM_MIN_MEM="8m"
+JVM_MIN_MEM=${DEF_JVM_MIN_MEM}
 
 ##
 #
 # Default maximum heap size for CheckValve Chat Relay
 #
-JVM_MAX_MEM="16m"
+DEF_JVM_MAX_MEM="16m"
+JVM_MAX_MEM=${DEF_JVM_MAX_MEM}
 
 ##
 #
@@ -215,6 +224,14 @@ while [ "$1" ] ; do
             ;;
     esac
 done
+
+# Make sure the BASEDIR exists
+if [ ! -d ${BASEDIR} ] ; then
+    echo >&2
+    echo "ERROR: The directory ${BASEDIR} does not exist. Please edit the BASEDIR variable in $0 and try again." >&2
+    echo >&2
+    exit 1
+fi
 
 # Make sure the JAR file exists
 if [ ! -f ${JARFILE} ] ; then

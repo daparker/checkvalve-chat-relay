@@ -44,6 +44,12 @@
  * - Added debugLevel option for more verbose logging.
  * - Added code for additional logging based on the value of
  *   debugLevel.
+ *
+ * October 30, 2014
+ * - Version 1.2.0
+ * - Added support for the new SteamID format
+ * - Fixed some default option values not matching the defaults listed
+ *   in the checkvalvechatrelay.properties file.
  */
 
 package com.dparker.apps.checkvalve;
@@ -78,7 +84,7 @@ public class CheckValveChatRelay
     final static byte PTYPE_CONNECTION_SUCCESS = (byte) 0x04;
     final static byte PTYPE_MESSAGE_DATA = (byte) 0x05;
     final static long START_TIME = System.currentTimeMillis();
-    final static String PROGRAM_VERSION = "1.1.0";
+    final static String PROGRAM_VERSION = "1.2.0";
     final static String IDENTITY_STRING = "CheckValve Chat Relay " + PROGRAM_VERSION;
 
     //
@@ -376,14 +382,14 @@ public class CheckValveChatRelay
         final String DEFAULT_CLIENT_ADDRESS = "0.0.0.0";
         final String DEFAULT_CLIENT_PORT = "23456";
         final String DEFAULT_DEBUG_LEVEL = "0";
-        final String DEFAULT_LOG_FILE = "";
+        final String DEFAULT_LOG_FILE = "checkvalvechatrelay.log";
         final String DEFAULT_LOGROTATE_ENABLED = "1";
         final String DEFAULT_LOGROTATE_INTERVAL = "168";
         final String DEFAULT_LOGROTATE_KEEP_FILES = "10";
         final String DEFAULT_LOGSTATS_ENABLED = "1";
-        final String DEFAULT_LOGSTATS_INTERVAL = "3600";
+        final String DEFAULT_LOGSTATS_INTERVAL = "86400";
         final String DEFAULT_MAX_CLIENTS = "10";
-        final String DEFAULT_MESSAGE_ADDRESS = "127.0.0.1";
+        final String DEFAULT_MESSAGE_ADDRESS = "0.0.0.0";
         final String DEFAULT_MESSAGE_PORT = "12345";
         final String DEFAULT_PASSWORD = "";
 
@@ -1521,6 +1527,36 @@ public class CheckValveChatRelay
 
                                 // Tokenize the message as a player chat
                                 tokens = message.split( "<[0-9]+><STEAM_(\\d:\\d:\\d+)>" );
+
+                                if( tokens.length == 2 )
+                                {
+                                    if( debugLevel >= 3 )
+                                        logger.debug(3, "[id=" + totalPackets + "] Successfully tonkenized packet data using old SteamID format.");
+                                }
+                                else
+                                {
+                                    if( debugLevel >= 3 )
+                                        logger.debug(3, "[id=" + totalPackets + "] Failed to tonkenize packet data using old SteamID format.");
+
+                                    // Try tokenizing on the new SteamID format
+                                    tokens = message.split( "<[0-9]+><\\[U:(\\d:\\d+)\\]>" );
+
+                                    if( tokens.length == 2 )
+                                    {
+                                        if( debugLevel >= 3 )
+                                            logger.debug(3, "[id=" + totalPackets + "] Successfully tonkenized packet data using new SteamID format.");
+                                    }
+                                    else
+                                    {
+                                        if( debugLevel >= 3 )
+                                        {
+                                            logger.debug(3, "[id=" + totalPackets + "] Failed to tokenize packet data using new SteamID format.");
+                                            logger.debug(3, "[id=" + totalPackets + "] Skipping this packet (couldn't parse message data).");
+                                        }
+
+                                        continue;
+                                    }
+                                }
 
                                 //
                                 // TOKENS:
