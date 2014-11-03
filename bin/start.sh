@@ -43,6 +43,9 @@
 # - Added static default values for variables. 
 # - Added a check for the existance of $BASEDIR.
 #
+# November 3, 2014
+# - Fixed improper PATH order when using a bundled JRE.
+#
 
 short_usage()
 {
@@ -143,9 +146,9 @@ JVM_MAX_MEM=${DEF_JVM_MAX_MEM}
 JARFILE="${BASEDIR}/lib/checkvalvechatrelay.jar"
 PIDFILE="${BASEDIR}/checkvalvechatrelay.pid"
 
-# If a bundled JRE is present then add it to the PATH
+# If a bundled JRE is present then use it
 if [ -d ${BASEDIR}/jre ] ; then
-    PATH="${PATH}:${BASEDIR}/jre/bin"
+    PATH="${BASEDIR}/jre/bin:${PATH}"
     export PATH
 
     # Set JAVA_HOME if it is not already set
