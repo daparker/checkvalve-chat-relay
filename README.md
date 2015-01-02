@@ -23,6 +23,9 @@ Change Log
 - Added code for additional logging based on the value of `debugLevel`.
 
 **Version 1.2.0**
-- Added support for the new SteamID format
+- Added support for the new SteamID format.
 - Fixed some default option values not matching the defaults listed in the checkvalvechatrelay.properties file.
+
+**Version 1.2.1**
+- Added warnings if the client or message listener is using a loopback address.
 

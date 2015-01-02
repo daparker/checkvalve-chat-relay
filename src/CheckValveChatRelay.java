@@ -50,6 +50,11 @@
  * - Added support for the new SteamID format
  * - Fixed some default option values not matching the defaults listed
  *   in the checkvalvechatrelay.properties file.
+ *
+ * January 2, 2015
+ * - Version 1.2.1
+ * - Added warnings if the client or message listener is using a
+ *   loopback address.
  */
 
 package com.dparker.apps.checkvalve;
@@ -84,7 +89,7 @@ public class CheckValveChatRelay
     final static byte PTYPE_CONNECTION_SUCCESS = (byte) 0x04;
     final static byte PTYPE_MESSAGE_DATA = (byte) 0x05;
     final static long START_TIME = System.currentTimeMillis();
-    final static String PROGRAM_VERSION = "1.2.0";
+    final static String PROGRAM_VERSION = "1.2.1";
     final static String IDENTITY_STRING = "CheckValve Chat Relay " + PROGRAM_VERSION;
 
     //
@@ -201,6 +206,19 @@ public class CheckValveChatRelay
             System.out.println( "WARNING: No log file is defined in the configuration file.  Logging is disabled." );
             System.out.println();
         }
+
+        // The loopback interface should only be used for testing.
+        if( clientListenAddress.equals("127.0.0.1") || clientListenAddress.equals("localhost") )
+        {
+            System.out.println();
+            System.out.println( "WARNING: The client listener is using a loopback address (" + clientListenAddress + ")." );
+        }
+        if( messageListenAddress.equals("127.0.0.1") || messageListenAddress.equals("localhost") )
+        {
+            System.out.println();
+            System.out.println( "WARNING: The message listener is using a loopback address (" + messageListenAddress + ")." );
+        }
+
 
         // Write startup messages to the log file
         logger.writeln( "[STARTUP] CheckValve Chat Relay started (version " + PROGRAM_VERSION + ")" );
