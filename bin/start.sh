@@ -46,66 +46,25 @@
 # November 3, 2014
 # - Fixed improper PATH order when using a bundled JRE.
 #
-
-short_usage()
-{
-    echo "Usage: $0 [--config <file>] [--minheap <size>] [--maxheap <size>] [--debug [--debughost <ip>] [--debugport <port>]]"
-    echo "       $0 [--help|-h|-?]"
-}
-
-long_usage()
-{
-    echo
-    short_usage
-    echo
-    echo "Command-line options:"
-    echo
-    echo "  --config <file>     Read config from <file> [default = ${DEF_CONFIG_FILE}]"
-    echo "  --minheap <size>    Set the JVM's minimum heap size to <size> [default = ${DEF_JVM_MIN_MEM}]"
-    echo "  --maxheap <size>    Set the JVM's maximum heap size to <size> [default = ${DEF_JVM_MAX_MEM}]"
-    echo "  --debug             Enable the Java debugging listener (for use with jdb)"
-    echo "  --debughost <ip>    IP for jdb connections if debugging is enabled [default = ${DEF_DEBUG_HOST}]"
-    echo "  --debugport <port>  Port for jdb connections if debugging is enabled [default = ${DEF_DEBUG_PORT}]"
-    echo "  --help | -h | -?    Show this help text and exit"
-    echo
-    echo "Note: For --minheap and --maxheap, the <size> value should be a number followed by k, m, or g"
-    echo "      kilobytes, megabytes, or gigabytes, respectively.  (Ex: 1048576k, 1024m, 1g)."
-    echo
-}
-
-start_debug()
-{
-    cd ${BASEDIR}
-
-    # Set the JVM debugging options
-    DEBUG_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${DEBUG_HOST}:${DEBUG_PORT}"
-
-    # Start CheckValve Chat Relay with debug options and save its PID to the PID file
-    ${JAVA_BIN} ${DEBUG_OPTS} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} -c ${CONFIG_FILE} >/dev/null &
-    echo "$!" > ${PIDFILE}
-    echo "Started CheckValve Chat Relay."
-    echo "(Debugging mode is enabled, connect jdb to ${DEBUG_HOST}:${DEBUG_PORT} for debugging)."
-
-    cd ${OLD_PWD}
-}
-
-start_no_debug()
-{
-    cd ${BASEDIR}
-
-    # Start CheckValve Chat Relay and save its PID to the PID file
-    ${JAVA_BIN} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} -c ${CONFIG_FILE} &
-    echo "$!" > ${PIDFILE}
-    echo "Started CheckValve Chat Relay."
-
-    cd ${OLD_PWD}
-}
+# May 4, 2015
+# - Moved constants and variables to the top of the script.
+# - Set the value of $BASEDIR automatically.
+#
 
 ##
 #
-# CheckValve Chat Relay base directory
+# Store the current working directory
 #
-BASEDIR="/usr/local/CheckValveChatRelay"
+OLD_PWD=$(pwd)
+
+##
+#
+# Set the CheckValve Chat Relay base directory
+#
+THISDIR=$(basename $0)
+cd ${THISDIR}/../
+AUTO_BASEDIR=$(pwd)
+cd ${OLD_PWD}
 
 ##
 #
@@ -163,6 +122,60 @@ fi
 # Java executable
 #
 JAVA_BIN=$(which java)
+
+short_usage()
+{
+    echo "Usage: $0 [--config <file>] [--minheap <size>] [--maxheap <size>] [--debug [--debughost <ip>] [--debugport <port>]]"
+    echo "       $0 [--help|-h|-?]"
+}
+
+long_usage()
+{
+    echo
+    short_usage
+    echo
+    echo "Command-line options:"
+    echo
+    echo "  --config <file>     Read config from <file> [default = ${DEF_CONFIG_FILE}]"
+    echo "  --minheap <size>    Set the JVM's minimum heap size to <size> [default = ${DEF_JVM_MIN_MEM}]"
+    echo "  --maxheap <size>    Set the JVM's maximum heap size to <size> [default = ${DEF_JVM_MAX_MEM}]"
+    echo "  --debug             Enable the Java debugging listener (for use with jdb)"
+    echo "  --debughost <ip>    IP for jdb connections if debugging is enabled [default = ${DEF_DEBUG_HOST}]"
+    echo "  --debugport <port>  Port for jdb connections if debugging is enabled [default = ${DEF_DEBUG_PORT}]"
+    echo "  --help | -h | -?    Show this help text and exit"
+    echo
+    echo "Note: For --minheap and --maxheap, the <size> value should be a number followed by k, m, or g"
+    echo "      kilobytes, megabytes, or gigabytes, respectively.  (Ex: 1048576k, 1024m, 1g)."
+    echo
+}
+
+start_debug()
+{
+    cd ${BASEDIR}
+
+    # Set the JVM debugging options
+    DEBUG_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${DEBUG_HOST}:${DEBUG_PORT}"
+
+    # Start CheckValve Chat Relay with debug options and save its PID to the PID file
+    ${JAVA_BIN} ${DEBUG_OPTS} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} -c ${CONFIG_FILE} >/dev/null &
+    echo "$!" > ${PIDFILE}
+    echo "Started CheckValve Chat Relay."
+    echo "(Debugging mode is enabled, connect jdb to ${DEBUG_HOST}:${DEBUG_PORT} for debugging)."
+
+    cd ${OLD_PWD}
+}
+
+start_no_debug()
+{
+    cd ${BASEDIR}
+
+    # Start CheckValve Chat Relay and save its PID to the PID file
+    ${JAVA_BIN} -Xms${JVM_MIN_MEM} -Xmx${JVM_MAX_MEM} -jar ${JARFILE} -c ${CONFIG_FILE} &
+    echo "$!" > ${PIDFILE}
+    echo "Started CheckValve Chat Relay."
+
+    cd ${OLD_PWD}
+}
 
 # Set options from the command line
 while [ "$1" ] ; do
@@ -231,7 +244,19 @@ done
 # Make sure the BASEDIR exists
 if [ ! -d ${BASEDIR} ] ; then
     echo >&2
-    echo "ERROR: The directory ${BASEDIR} does not exist. Please edit the BASEDIR variable in $0 and try again." >&2
+    echo "ERROR: The directory ${BASEDIR} does not exist.
+    echo >&2
+    echo "Please edit the BASEDIR variable in $0 and try again." >&2
+    echo >&2
+    exit 1
+fi
+
+# Make sure the $BASEDIR/lib directory exists
+if [ ! -d ${BASEDIR}/lib ] ; then
+    echo >&2
+    echo "ERROR: The directory ${BASEDIR}/lib does not exist.
+    echo >&2
+    echo "Please edit the BASEDIR variable in $0 and try again." >&2
     echo >&2
     exit 1
 fi
@@ -255,9 +280,10 @@ fi
 # Make sure the 'java' command is in the PATH
 if [ "$JAVA_BIN" = "" ] ; then
     echo >&2
-    echo "ERROR: Unable to locate the 'java' executable.  Please ensure" >&2
-    echo "       the Java Runtime Environment (JRE) is installed and" >&2
-    echo "       the 'java' executable can be found in your PATH." >&2
+    echo "ERROR: Unable to locate the 'java' executable.
+    echo >&2
+    echo "Please ensure the Java Runtime Environment (JRE) is installed" >&2
+    echo "and the 'java' executable can be found in your PATH." >&2
     echo >&2
     exit 1
 fi

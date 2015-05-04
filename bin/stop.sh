@@ -36,12 +36,24 @@
 # November 14, 2013
 # - Initial release.
 #
+# May 4, 2015
+# - Set the value of $BASEDIR automatically.
+#
 
 ##
 #
-# CheckValve Chat Relay base directory
+# Store the current working directory
 #
-BASEDIR="/usr/local/CheckValveChatRelay"
+OLD_PWD=$(pwd)
+
+##
+#
+# Set the CheckValve Chat Relay base directory
+#
+THISDIR=$(basename $0)
+cd ${THISDIR}/../
+AUTO_BASEDIR=$(pwd)
+cd ${OLD_PWD}
 
 ##
 #
