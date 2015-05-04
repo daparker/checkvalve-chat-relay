@@ -145,7 +145,6 @@ echo Please ensure that this script is being executed from the
 echo <install_dir>\bin folder, where <install_dir> is the base
 echo installation folder of the CheckValve Chat Relay.
 echo.
-pause
 goto exit
 
 REM --- Display an error and exit if Java could not be found
@@ -156,13 +155,20 @@ echo.
 echo Please ensure the Java Runtime Environment (JRE) is installed
 echo and the 'java' executable can be found in your PATH.
 echo.
-pause
 goto exit
 
 REM --- Run chatrelayctl to start the Chat Relay
 :run_program
 cd ..\lib
-start /b JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% start
+if %DEBUG%==1 (
+    DEBUG_OPTS=--debug --debughost %DEBUG_HOST% --debugport %DEBUG_PORT%
+    start /b %JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% --minheap %JVM_MIN_MEM% --maxheap %JVM_MAX_MEM "%DEBUG_OPTS%" start
+    echo Started CheckValve Chat Relay.
+    echo (Debugging mode is enabled, connect jdb to %DEBUG_HOST%:%DEBUG_PORT% for debugging).
+) else (
+    start /b %JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% --minheap %JVM_MIN_MEM% --maxheap %JVM_MAX_MEM start
+    echo Started CheckValve Chat Relay.
+)
 goto exit
 
 :usage
@@ -183,7 +189,8 @@ echo.
 echo Note: For --minheap and --maxheap, the <size> value should be a number followed by k, m, or g
 echo       kilobytes, megabytes, or gigabytes, respectively.  (Ex: 1048576k, 1024m, 1g).
 echo.
-pause
 goto exit
 
 :exit
+pause
+exit
