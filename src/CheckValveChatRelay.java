@@ -2466,13 +2466,13 @@ public class CheckValveChatRelay
 
             if( ! listening )
             {
-                // Create the TCP listen socket
+                // Create the UDP listen socket
                 controlListenerSocket = new DatagramSocket(controlListenPort, localhost);
 
                 // Set the listening flag
                 listening = true;
 
-                logger.writeln( "Control listener started; listening for control commands on 127.0.0.1:" + controlListenPort + " (UCP)." );
+                logger.writeln( "Control listener started; listening for control commands on 127.0.0.1:" + controlListenPort + " (UDP)." );
             }
 
             for(;;)
