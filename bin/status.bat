@@ -67,7 +67,7 @@ goto exit
 REM --- Run chatrelayctl to start the Chat Relay 
 :run_program
 cd ..\lib
-start /b %JAVA_BIN% -jar chatrelayctl.jar status
+%JAVA_BIN% -jar chatrelayctl.jar status
 pause
 goto exit
 
