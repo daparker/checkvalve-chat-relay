@@ -63,7 +63,7 @@ OLD_PWD=$(pwd)
 #
 THISDIR=$(basename $0)
 cd ${THISDIR}/../
-AUTO_BASEDIR=$(pwd)
+BASEDIR=$(pwd)
 cd ${OLD_PWD}
 
 ##
