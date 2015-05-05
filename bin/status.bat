@@ -1,5 +1,24 @@
 @echo off
 REM
+REM Copyright 2010-2015 by David A. Parker <parker.david.a@gmail.com>
+REM
+REM This file is part of CheckValve, an HLDS/SRCDS query app for Android.
+REM
+REM CheckValve is free software: you can redistribute it and/or modify
+REM it under the terms of the GNU General Public License as published by
+REM the Free Software Foundation.
+REM
+REM CheckValve is distributed in the hope that it will be useful,
+REM but WITHOUT ANY WARRANTY; without even the implied warranty of
+REM MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+REM GNU General Public License for more details.
+REM
+REM You should have received a copy of the GNU General Public License
+REM along with the CheckValve source code.  If not, see
+REM <http://www.gnu.org/licenses/>.
+REM
+
+REM
 REM  PROGRAM:
 REM  status.bat
 REM
