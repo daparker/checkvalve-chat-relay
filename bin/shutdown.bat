@@ -26,9 +26,7 @@ if "%1"=="--config" (
         goto usage
     ) else (
         set CONFIG_FILE=%2
-        shift
-        shift
-        goto check_opts
+        goto check_lib_dir
     )
 ) else (
     echo.
@@ -74,7 +72,6 @@ echo Please ensure that this script is being executed from the
 echo <install_dir>\bin folder, where <install_dir> is the base
 echo installation folder of the CheckValve Chat Relay.
 echo.
-pause
 goto exit
 
 REM --- Display an error and exit if Java could not be found
@@ -85,26 +82,29 @@ echo.
 echo Please ensure the Java Runtime Environment (JRE) is installed and
 echo the 'java' executable can be found in your PATH.
 echo.
-pause
 goto exit
 
 REM --- Run chatrelayctl to stop the Chat Relay 
 :run_program
 cd ..\lib
-%JAVA_BIN% -jar lib\chatrelayctl.jar --config %CONFIG_FILE% stop
+%JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% stop
+cd ..\bin
 goto exit
 
 :usage
 echo.
-echo Usage: %0 [--config <file>]
-echo        %0 [--help]
+echo Usage: %0
+echo        [--config ^<file^>]
+echo        [--help]
 echo.
 echo Command-line options:
 echo.
-echo   --config <file>     Read config from <file> [default = %DEF_CONFIG_FILE%]
-echo   --help              Show this help text and exit
+echo   --config ^<file^>  Read config from ^<file^>
+echo                    [default = %DEF_CONFIG_FILE%]
 echo.
-pause
+echo   --help           Show this help text and exit
+echo.
 goto exit
 
 :exit
+pause
