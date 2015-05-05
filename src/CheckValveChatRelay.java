@@ -55,6 +55,11 @@
  * - Version 1.2.1
  * - Added warnings if the client or message listener is using a
  *   loopback address.
+ *
+ * May 5, 2015
+ * - Version 1.3.0
+ * - Added control listener
+ *
  */
 
 package com.dparker.apps.checkvalve;
@@ -89,7 +94,7 @@ public class CheckValveChatRelay
     final static byte PTYPE_CONNECTION_SUCCESS = (byte) 0x04;
     final static byte PTYPE_MESSAGE_DATA = (byte) 0x05;
     final static long START_TIME = System.currentTimeMillis();
-    final static String PROGRAM_VERSION = "1.2.1";
+    final static String PROGRAM_VERSION = "1.3.0";
     final static String IDENTITY_STRING = "CheckValve Chat Relay " + PROGRAM_VERSION;
 
     //
@@ -2482,8 +2487,6 @@ public class CheckValveChatRelay
                 // Create a new open socket for the next connection
                 controlListenerSocket.receive(packet);
 
-                logger.writeln( "Received control request." );
-
                 // Get the current time
                 connectTimeMillis = System.currentTimeMillis();
 
@@ -2496,7 +2499,7 @@ public class CheckValveChatRelay
                         logger.debug(3, "Control request contains an invalid header (expected " + exp + ", received " + rcv + ").");
                     }
 
-                    logger.writeln("Rejecting control request : Invalid packet header.");
+                    logger.writeln( "Rejecting control request : Invalid packet header." );
                     continue;
                 }
 
@@ -2506,12 +2509,14 @@ public class CheckValveChatRelay
 
                 if( reqTimestamp > connectTimeMillis || reqTimestamp < (connectTimeMillis - 100) ) 
                 {
-                    logger.writeln("Rejecting control request : Invalid timestamp.");
+                    logger.writeln( "Rejecting control request : Invalid timestamp." );
                     continue;
                 }
 
                 if( reqType == CTL_PTYPE_STATUS )
                 {
+                    logger.writeln( "Received a status request." );
+
                     InetAddress remoteAddr = packet.getAddress();
                     int remotePort = packet.getPort();
 
@@ -2553,7 +2558,7 @@ public class CheckValveChatRelay
                 }
                 else if( reqType == CTL_PTYPE_SHUTDOWN )
                 {
-                    logger.writeln("Received a shutdown control : Shutting down.");
+                    logger.writeln( "Received a shutdown control : Shutting down." );
 
                     InetAddress remoteAddr = packet.getAddress();
                     int remotePort = packet.getPort();
@@ -2575,7 +2580,7 @@ public class CheckValveChatRelay
                 }
                 else
                 {
-                    logger.writeln("Rejecting control request : Invalid value.");
+                    logger.writeln( "Rejecting control request : Invalid value." );
                     continue;
                 }
             }
