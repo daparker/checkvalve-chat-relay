@@ -13,7 +13,29 @@ REM  DATE:
 REM  May 4, 2015
 REM
 
+REM --- Default configuration file
+set DEF_CONFIG_FILE=..\checkvalvechatrelay.properties
+set CONFIG_FILE=%DEF_CONFIG_FILE%
+
+if "%1"=="" goto check_lib_dir
+if "%1"=="--help" goto usage
+if "%1"=="--config" (
+    if "%2"=="" (
+        echo.
+        echo ERROR: The option --config requires a value.
+        goto usage
+    ) else (
+        set CONFIG_FILE=%2
+        goto check_lib_dir
+    )
+) else (
+    echo.
+    echo ERROR: Invalid option %1
+    goto usage
+)
+
 REM --- Make sure the directory ..\lib exists
+:check_lib_dir
 if not exist ..\lib (
     goto no_lib_dir
 ) else (
@@ -50,7 +72,6 @@ echo Please ensure that this script is being executed from the
 echo <install_dir>\bin folder, where <install_dir> is the base
 echo installation folder of the CheckValve Chat Relay.
 echo.
-pause
 goto exit
 
 REM --- Display an error and exit if Java could not be found
@@ -61,14 +82,29 @@ echo.
 echo Please ensure the Java Runtime Environment (JRE) is installed and
 echo the 'java' executable can be found in your PATH.
 echo.
-pause
 goto exit
 
 REM --- Run chatrelayctl to start the Chat Relay 
 :run_program
 cd ..\lib
 %JAVA_BIN% -jar chatrelayctl.jar status
-pause
+cd ..\bin
+goto exit
+
+:usage
+echo.
+echo Usage: %0
+echo        [--config ^<file^>]
+echo        [--help]
+echo.
+echo Command-line options:
+echo.
+echo   --config ^<file^>  Read config from ^<file^>
+echo                    [default = %DEF_CONFIG_FILE%]
+echo.
+echo   --help           Show this help text and exit
+echo.
 goto exit
 
 :exit
+pause
