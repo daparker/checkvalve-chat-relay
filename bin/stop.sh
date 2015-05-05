@@ -1,7 +1,7 @@
 #!/bin/bash
 ##
 #
-# Copyright 2010-2013 by David A. Parker <parker.david.a@gmail.com>
+# Copyright 2010-2015 by David A. Parker <parker.david.a@gmail.com>
 # 
 # This file is part of CheckValve, an HLDS/SRCDS query app for Android.
 # 
