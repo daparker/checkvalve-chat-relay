@@ -21,7 +21,6 @@ REM --- Default debugging options
 set DEF_DEBUG_HOST=localhost
 set DEF_DEBUG_PORT=1044
 set DEBUG=0
-set DEBUG_OPTS=
 set DEBUG_HOST=%DEF_DEBUG_HOST%
 set DEBUG_PORT=%DEF_DEBUG_PORT%
 
@@ -119,7 +118,7 @@ REM --- Check for a bundled JRE
 :check_bundled_java
 if exist ..\jre\bin\javaw.exe (
     set JAVA_BIN=..\jre\bin\javaw.exe
-    goto run_program
+    goto check_if_running
 ) else (
     goto check_system_java
 )
@@ -133,7 +132,7 @@ if errorlevel 1 (
 )
 if errorlevel 0 (
     set JAVA_BIN=javaw.exe
-    goto run_program
+    goto check_if_running
 )
 
 REM --- Display and error and exit if ..\lib does not exist
@@ -157,40 +156,74 @@ echo and the 'java' executable can be found in your PATH.
 echo.
 goto exit
 
+REM --- Check to see if the Chat Relay is already running
+:check_if_running
+cd ..\lib
+%JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% status >NUL 2>NUL
+set retval=%ERRORLEVEL%
+cd ..\bin
+if %retval% equ 1 (
+    goto run_program
+) else (
+    goto is_running
+)
+
 REM --- Run chatrelayctl to start the Chat Relay
 :run_program
 cd ..\lib
-if %DEBUG%==1 (
-    DEBUG_OPTS=--debug --debughost %DEBUG_HOST% --debugport %DEBUG_PORT%
-    start /b %JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% --minheap %JVM_MIN_MEM% --maxheap %JVM_MAX_MEM "%DEBUG_OPTS%" start
+if %DEBUG% equ 1 (
+    set DEBUG_OPTS=--debug --debughost %DEBUG_HOST% --debugport %DEBUG_PORT%
+    start /b %JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% --minheap %JVM_MIN_MEM% --maxheap %JVM_MAX_MEM% %DEBUG_OPTS% start
     echo Started CheckValve Chat Relay.
-    echo (Debugging mode is enabled, connect jdb to %DEBUG_HOST%:%DEBUG_PORT% for debugging).
+    echo ^(Debugging mode is enabled, connect jdb to %DEBUG_HOST%:%DEBUG_PORT% for debugging.^)
 ) else (
-    start /b %JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% --minheap %JVM_MIN_MEM% --maxheap %JVM_MAX_MEM start
+    start /b %JAVA_BIN% -jar chatrelayctl.jar --config %CONFIG_FILE% --minheap %JVM_MIN_MEM% --maxheap %JVM_MAX_MEM% start
     echo Started CheckValve Chat Relay.
 )
+cd ..\bin
 goto exit
 
+REM --- Display an error and exit if the Chat Relay is already running
+:is_running
+echo.
+echo CheckValve Chat Relay is already running.
+echo.
+goto exit
+
+REM --- Show usage information
 :usage
 echo.
-echo Usage: %0 [--config <file>] [--minheap <size>] [--maxheap <size>] [--debug [--debughost <ip>] [--debugport <port>]]
-echo        %0 [--help]
+echo Usage: %0
+echo        [--config ^<file^>] [--minheap ^<size^>] [--maxheap ^<size^>]
+echo        [--debug [--debughost ^<ip^>] [--debugport ^<port^>]]
+echo        [--help]
 echo.
 echo Command-line options:
 echo.
-echo   --config <file>     Read config from <file> [default = %DEF_CONFIG_FILE%]
-echo   --minheap <size>    Set the JVM's minimum heap size to <size> [default = %DEF_JVM_MIN_MEM%]
-echo   --maxheap <size>    Set the JVM's maximum heap size to <size> [default = %DEF_JVM_MAX_MEM%]
+echo   --config ^<file^>     Read config from ^<file^>
+echo                       [default = %DEF_CONFIG_FILE%]
+echo.
+echo   --minheap ^<size^>    Set the JVM's minimum heap size to ^<size^>
+echo                       [default = %DEF_JVM_MIN_MEM%]
+echo.
+echo   --maxheap ^<size^>    Set the JVM's maximum heap size to ^<size^>
+echo                       [default = %DEF_JVM_MAX_MEM%]
+echo.
 echo   --debug             Enable the Java debugging listener (for use with jdb)
-echo   --debughost <ip>    IP for jdb connections if debugging is enabled [default = %DEF_DEBUG_HOST%]
-echo   --debugport <port>  Port for jdb connections if debugging is enabled [default = %DEF_DEBUG_PORT%]
+echo.
+echo   --debughost ^<ip^>    IP for jdb connections if debugging is enabled
+echo                       [default = %DEF_DEBUG_HOST%]
+echo.
+echo   --debugport ^<port^>  Port for jdb connections if debugging is enabled
+echo                       [default = %DEF_DEBUG_PORT%]
+echo.
 echo   --help              Show this help text and exit
 echo.
-echo Note: For --minheap and --maxheap, the <size> value should be a number followed by k, m, or g
-echo       kilobytes, megabytes, or gigabytes, respectively.  (Ex: 1048576k, 1024m, 1g).
+echo Note: For --minheap and --maxheap, the ^<size^> value should be a number
+echo       followed by "k" for kilobytes, "m" for megabytes, or "g" for
+echo       gigabytes.  (Ex: 1048576k, 1024m, 1g).
 echo.
 goto exit
 
 :exit
 pause
-exit
