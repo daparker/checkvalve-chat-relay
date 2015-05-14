@@ -40,11 +40,10 @@ WINDOWS:
 
 1. Extract the zip file
 
-
-3. Edit the properties file to configure the Chat Relay (by default this is
+2. Edit the properties file to configure the Chat Relay (by default this is
    <INSTALL_PATH>\checkvalvechatrelay-VERSION\checkvalvechatrelay.properties)
 
-4. Start the chat relay:
+3. Start the chat relay:
 
     Navigate to the <INSTALL_PATH>\bin folder and double-click on the file
     file, or execute startup.bat from a DOS command window.
