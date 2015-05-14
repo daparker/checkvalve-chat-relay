@@ -29,3 +29,7 @@ Change Log
 **Version 1.2.1**
 - Added warnings if the client or message listener is using a loopback address.
 
+**Version 1.3.0**
+- Added the control listener
+- Added chatrelayctl.jar for controlling the Chat Relay
+- Added start/stop scripts for Windows

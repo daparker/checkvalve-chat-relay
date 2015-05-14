@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2013 by David A. Parker <parker.david.a@gmail.com>
+ * Copyright 2010-2015 by David A. Parker <parker.david.a@gmail.com>
  * 
  * This file is part of CheckValve, an HLDS/SRCDS query app for Android.
  * 
@@ -29,7 +29,7 @@
  *
  * CHANGE LOG:
  *
- * April 29, 2015
+ * May 5, 2015
  * - Version 1.0.0.
  * - Initial release.
  */
@@ -61,7 +61,8 @@ public class ChatRelayCtl
     private static String debugHost;
     private static String debugPort;
     private static boolean debug;
-    private static int controlPort;
+    private static boolean specifyConfig;
+    private static int controlListenPort;
     private static File parentDir;
 
     public static void main(String args[]) throws InterruptedException
@@ -84,11 +85,12 @@ public class ChatRelayCtl
             debugHost = "localhost";
             debugPort = "1044";
             debug = false;
-            controlPort = 34567;
+            specifyConfig = false;
+            controlListenPort = 34567;
         }
         catch( Exception e )
         {
-            System.out.println("ERROR: Caught an exception: " + e.toString());
+            System.out.println( "ERROR: Caught an exception: " + e.toString() );
             e.printStackTrace();
             System.exit(1);
         }
@@ -110,7 +112,7 @@ public class ChatRelayCtl
                 catch( ArrayIndexOutOfBoundsException e )
                 {
                     System.out.println();
-                    System.out.println("ERROR: The option " + opt + " requires a value.");
+                    System.out.println( "ERROR: The option " + opt + " requires a value." );
                     usage();
                     System.exit(1);
                 }
@@ -121,11 +123,12 @@ public class ChatRelayCtl
                 {
                     val = args[++i];
                     configFile = val;
+                    specifyConfig = true;
                 }
                 catch( ArrayIndexOutOfBoundsException e )
                 {
                     System.out.println();
-                    System.out.println("ERROR: The option " + opt + " requires a value.");
+                    System.out.println( "ERROR: The option " + opt + " requires a value." );
                     usage();
                     System.exit(1);
                 }
@@ -140,7 +143,7 @@ public class ChatRelayCtl
                 catch( ArrayIndexOutOfBoundsException e )
                 {
                     System.out.println();
-                    System.out.println("ERROR: The option " + opt + " requires a value.");
+                    System.out.println( "ERROR: The option " + opt + " requires a value." );
                     usage();
                     System.exit(1);
                 }
@@ -155,7 +158,7 @@ public class ChatRelayCtl
                 catch( ArrayIndexOutOfBoundsException e )
                 {
                     System.out.println();
-                    System.out.println("ERROR: The option " + opt + " requires a value.");
+                    System.out.println( "ERROR: The option " + opt + " requires a value." );
                     usage();
                     System.exit(1);
                 }
@@ -174,7 +177,7 @@ public class ChatRelayCtl
                 catch( ArrayIndexOutOfBoundsException e )
                 {
                     System.out.println();
-                    System.out.println("ERROR: The option " + opt + " requires a value.");
+                    System.out.println( "ERROR: The option " + opt + " requires a value." );
                     usage();
                     System.exit(1);
                 }
@@ -189,7 +192,7 @@ public class ChatRelayCtl
                 catch( ArrayIndexOutOfBoundsException e )
                 {
                     System.out.println();
-                    System.out.println("ERROR: The option " + opt + " requires a value.");
+                    System.out.println( "ERROR: The option " + opt + " requires a value." );
                     usage();
                     System.exit(1);
                 }
@@ -216,7 +219,7 @@ public class ChatRelayCtl
                 else
                 {
                     System.out.println();
-                    System.out.println("Invalid option: " + opt);
+                    System.out.println( "Invalid option: " + opt );
                     usage();
                     System.exit(1);
                 }
@@ -232,12 +235,12 @@ public class ChatRelayCtl
     private static void usage()
     {
         System.out.println();
-        System.out.println("Usage: java -jar chatrelayctl.jar [--config <file>] {start|stop|status}");
-        System.out.println("       java -jar chatrelayctl.jar --help");
+        System.out.println( "Usage: java -jar chatrelayctl.jar [--config <file>] {start|stop|status}" );
+        System.out.println( "       java -jar chatrelayctl.jar --help" );
         System.out.println();
-        System.out.println("Command line options:");
-        System.out.println("    --config <file>  Get configuration from <file> instead of the default (checkvalvechatrelay.properties)");
-        System.out.println("    --help           Show this help and exit.");
+        System.out.println( "Command line options:" );
+        System.out.println( "    --config <file>  Get configuration from <file> instead of the default (checkvalvechatrelay.properties)" );
+        System.out.println( "    --help           Show this help and exit." );
         System.out.println();
     }
 
@@ -267,14 +270,14 @@ public class ChatRelayCtl
 
         try
         {
-            controlPort = Integer.parseInt(config.getProperty("controlPort",DEFAULT_CONTROL_PORT).trim());
-            if( controlPort < 0 ) throw new NumberFormatException();
+            controlListenPort = Integer.parseInt(config.getProperty("controlListenPort",DEFAULT_CONTROL_PORT).trim());
+            if( controlListenPort < 0 ) throw new NumberFormatException();
         }
         catch( NumberFormatException n )
         {
-            controlPort = Integer.parseInt(DEFAULT_CONTROL_PORT);
+            controlListenPort = Integer.parseInt(DEFAULT_CONTROL_PORT);
             System.out.println();
-            System.out.println( "WARNING: Specified value for controlPort is invalid, using default (" + DEFAULT_CONTROL_PORT + ")." );
+            System.out.println( "WARNING: Specified value for controlListenPort is invalid, using default (" + DEFAULT_CONTROL_PORT + ")." );
         }
     }
 
@@ -285,16 +288,19 @@ public class ChatRelayCtl
 
         try
         {
-            String bundledJava = parentDir.getCanonicalPath() + fs + "jre" + fs + "bin" + fs + "java";
-            String debugOpts = "";
-            String java = "";
+            String os = System.getProperty("os.name").toLowerCase();
+            String javaExe = (os.toLowerCase().contains("win"))?"java.exe":"java";
+
+            String bundledJava = parentDir.getCanonicalPath() + fs + "jre" + fs + "bin" + fs + javaExe;
+            String debugOpts = new String();
+            String java = new String();
 
             f = new File(jarFile);
 
             if( ! f.exists() )
             {
                 System.err.println();
-                System.err.println("ERROR: Unable to locate " + jarFile + ".");
+                System.err.println( "ERROR: Unable to locate " + jarFile + "." );
                 System.err.println();
                 System.exit(1);
             }
@@ -307,18 +313,18 @@ public class ChatRelayCtl
             }
             else
             {
-                Process p = r.exec("java -version");
+                Process p = r.exec(javaExe + " -version");
 
                 if( p.waitFor() == 0 )
                 {
-                    java = "java";
+                    java = javaExe;
                 }
                 else
                 {
                     System.err.println();
-                    System.err.println("ERROR: Unable to locate the 'java' executable.  Please ensure");
-                    System.err.println("       the Java Runtime Environment (JRE) is installed and");
-                    System.err.println("       the 'java' executable can be found in your PATH.");
+                    System.err.println( "ERROR: Unable to locate the 'java' executable.  Please ensure" );
+                    System.err.println( "       the Java Runtime Environment (JRE) is installed and" );
+                    System.err.println( "       the 'java' executable can be found in your PATH." );
                     System.err.println();
                     System.exit(1);
                 }
@@ -329,18 +335,29 @@ public class ChatRelayCtl
             cmd += " -Xms" + minHeap;
             cmd += " -Xmx" + maxHeap;
             cmd += " -jar " + jarFile;
-            cmd += " -c " + configFile;
+
+            if( specifyConfig )
+            {
+                String conf = new String();
+
+                if( configFile.startsWith("..") )
+                    conf = configFile.substring(3);
+                else
+                    conf = configFile;
+
+                cmd += " -c " + conf;
+            }
 
             r.exec(cmd, null, parentDir);
 
-            System.out.println("Started CheckValve Chat Relay.");
+            System.out.println( "Started CheckValve Chat Relay." );
 
             if( debug )
-                System.out.println("(Debugging mode is enabled, connect jdb to " + debugHost + ":" + debugPort + " for debugging).");
+                System.out.println( "(Debugging mode is enabled, connect jdb to " + debugHost + ":" + debugPort + " for debugging)." );
         }
         catch( Exception e )
         {
-            System.out.println("ERROR: Caught an exception: " + e.toString());
+            System.out.println( "ERROR: Caught an exception: " + e.toString() );
             e.printStackTrace();
             System.exit(1);
         }
@@ -381,7 +398,7 @@ public class ChatRelayCtl
             out = new DatagramPacket(outBuffer.array(), outBuffer.position(), outBuffer.limit());
             in = new DatagramPacket(inArray, inArray.length);
 
-            s.connect(localhost,controlPort);
+            s.connect(localhost,controlListenPort);
             s.setSoTimeout(1000);
             s.send(out);
             s.receive(in);
@@ -394,7 +411,7 @@ public class ChatRelayCtl
             {
                 String exp = "0x" + Integer.toHexString(CTL_PACKET_HEADER).toUpperCase();
                 String rcv = "0x" + String.format("%8s", Integer.toHexString(reqHeader)).replace(' ','0').toUpperCase();
-                System.out.println( "Control request contains an invalid header (expected " + exp + ", received " + rcv + ").");
+                System.out.println( "Control request contains an invalid header (expected " + exp + ", received " + rcv + ")." );
                 System.out.println( "Rejecting control request : Invalid packet (bad header)." );
                 return;
             }
@@ -477,13 +494,13 @@ public class ChatRelayCtl
         }
         catch( PortUnreachableException e )
         {
-            System.out.println("Could not connect to the CheckValve Chat Relay.");
+            System.out.println( "Could not connect to the CheckValve Chat Relay." );
             System.exit(1);
         }
         catch( Exception e )
         {
-            System.out.println("Failed to send control packet to the CheckValve Chat Relay.");
-            System.out.println("Caught an exception: " + e.toString());
+            System.out.println( "Failed to send control packet to the CheckValve Chat Relay." );
+            System.out.println( "Caught an exception: " + e.toString() );
             e.printStackTrace();
             System.exit(1);
         }

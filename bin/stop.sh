@@ -1,7 +1,7 @@
 #!/bin/bash
 ##
 #
-# Copyright 2010-2013 by David A. Parker <parker.david.a@gmail.com>
+# Copyright 2010-2015 by David A. Parker <parker.david.a@gmail.com>
 # 
 # This file is part of CheckValve, an HLDS/SRCDS query app for Android.
 # 
@@ -36,12 +36,24 @@
 # November 14, 2013
 # - Initial release.
 #
+# May 4, 2015
+# - Set the value of $BASEDIR automatically.
+#
 
 ##
 #
-# CheckValve Chat Relay base directory
+# Store the current working directory
 #
-BASEDIR="/usr/local/CheckValveChatRelay"
+OLD_PWD=$(pwd)
+
+##
+#
+# Set the CheckValve Chat Relay base directory
+#
+THISDIR=$(basename $0)
+cd ${THISDIR}/../
+BASEDIR=$(pwd)
+cd ${OLD_PWD}
 
 ##
 #
