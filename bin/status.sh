@@ -34,6 +34,11 @@
 #
 # May 4, 2015
 # - Initial release.
+#
+# June 14, 2015
+# - Replaced 'basename' with 'dirname' so setting $BASEDIR works correctly.
+# - Fixed typos which caused syntax errors
+#
 
 ##
 #
@@ -45,7 +50,7 @@ OLD_PWD=$(pwd)
 #
 # Set the CheckValve Chat Relay base directory
 #
-THISDIR=$(basename $0)
+THISDIR=$(dirname $0)
 cd ${THISDIR}/../
 BASEDIR=$(pwd)
 cd ${OLD_PWD}
@@ -83,7 +88,7 @@ JAVA_BIN=$(which java)
 
 short_usage()
 {
-    echo "Usage: $0 [--config <file>] [--help|-h|-?]
+    echo "Usage: $0 [--config <file>] [--help|-h|-?]"
 }
 
 long_usage()
@@ -135,7 +140,7 @@ done
 # Make sure the BASEDIR exists
 if [ ! -d ${BASEDIR} ] ; then
     echo >&2
-    echo "ERROR: The directory ${BASEDIR} does not exist.
+    echo "ERROR: The directory ${BASEDIR} does not exist."
     echo >&2
     echo "Please edit the BASEDIR variable in $0 and try again." >&2
     echo >&2
@@ -145,7 +150,7 @@ fi
 # Make sure the $BASEDIR/lib directory exists
 if [ ! -d ${BASEDIR}/lib ] ; then
     echo >&2
-    echo "ERROR: The directory ${BASEDIR}/lib does not exist.
+    echo "ERROR: The directory ${BASEDIR}/lib does not exist."
     echo >&2
     echo "Please edit the BASEDIR variable in $0 and try again." >&2
     echo >&2
@@ -163,9 +168,9 @@ fi
 # Make sure the 'java' command is in the PATH
 if [ "$JAVA_BIN" = "" ] ; then
     echo >&2
-    echo "ERROR: Unable to locate the 'java' executable.
+    echo "ERROR: Unable to locate the 'java' executable."
     echo >&2
-    echo "Please ensure the Java Runtime Environment (JRE) is installed" >&2
+    echo "Please ensure the Java Runtime Environment is installed" >&2
     echo "and the 'java' executable can be found in your PATH." >&2
     echo >&2
     exit 1

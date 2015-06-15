@@ -39,6 +39,9 @@
 # May 4, 2015
 # - Set the value of $BASEDIR automatically.
 #
+# June 14, 2015
+# - Replaced 'basename' with 'dirname' so setting $BASEDIR works correctly.
+#
 
 ##
 #
@@ -50,7 +53,7 @@ OLD_PWD=$(pwd)
 #
 # Set the CheckValve Chat Relay base directory
 #
-THISDIR=$(basename $0)
+THISDIR=$(dirname $0)
 cd ${THISDIR}/../
 BASEDIR=$(pwd)
 cd ${OLD_PWD}
