@@ -60,6 +60,10 @@
  * - Version 1.3.0
  * - Added control listener
  *
+ * September 28, 2015
+ * - Version 1.4.0
+ * - Added automatic check for updates
+ *
  */
 
 package com.dparker.apps.checkvalve;
@@ -76,6 +80,8 @@ import java.nio.ByteOrder;
 import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
 import java.nio.channels.SelectionKey;
+import javax.net.ssl.HttpsURLConnection;
+
 
 public class CheckValveChatRelay
 {
@@ -94,7 +100,7 @@ public class CheckValveChatRelay
     final static byte PTYPE_CONNECTION_SUCCESS = (byte) 0x04;
     final static byte PTYPE_MESSAGE_DATA = (byte) 0x05;
     final static long START_TIME = System.currentTimeMillis();
-    final static String PROGRAM_VERSION = "1.3.0";
+    final static String PROGRAM_VERSION = "1.4.0";
     final static String IDENTITY_STRING = "CheckValve Chat Relay " + PROGRAM_VERSION;
 
     //
@@ -114,6 +120,7 @@ public class CheckValveChatRelay
     static int acceptedConnections = 0;
     static int rejectedConnections = 0;
     static int debugLevel = 0;
+    static int updateCheckEnabled = 0;
 
     static long clientCheckInterval = 0;
     static long logStatsInterval = 0;
@@ -122,6 +129,7 @@ public class CheckValveChatRelay
     static long autoBanDuration = 0;
     static long totalPackets = 0;
     static long chatPackets = 0;
+    static long updateCheckInterval = 0;
 
     static boolean newMessage = false;
     static boolean shuttingDown = false;
@@ -255,6 +263,11 @@ public class CheckValveChatRelay
         else
             logger.writeln( "[STARTUP] Auto-ban is NOT enabled." );
 
+        if( updateCheckEnabled == 1 )
+            logger.writeln( "[STARTUP] Automatic update checking is enabled." );
+        else
+            logger.writeln( "[STARTUP] Automatic update checking is NOT enabled." );
+
         // Initialize the Connection objects for client slots
         for( int i = 0; i < maxClients; i++ )
             connections[i] = new Connection();
@@ -270,6 +283,7 @@ public class CheckValveChatRelay
         final Thread checkBansThread = new Thread(new CheckBans());
         final Thread logStatsThread = new Thread(new LogStats());
         final Thread logRotateThread = new Thread(new LogRotate());
+        final Thread updateCheckThread = new Thread(new CheckForUpdates());
 
         // Set thread names
         tcpListenerThread.setName("ClientListener");
@@ -280,6 +294,7 @@ public class CheckValveChatRelay
         checkBansThread.setName("CheckBans");
         logStatsThread.setName("LogStats");
         logRotateThread.setName("LogRotate");
+        updateCheckThread.setName("CheckForUpdates");
 
         // Start threads
         tcpListenerThread.start();
@@ -299,6 +314,10 @@ public class CheckValveChatRelay
         // Only start the LogRotate thread if stats logging is enabled
         if( logRotateEnabled == 1 )
             logRotateThread.start();
+
+        // Only start the CheckForUpdates thread if update checking is enabled
+        if( updateCheckEnabled == 1 )
+            updateCheckThread.start();
 
         // Add a shutdown hook to clean up before shutting down
         Runtime.getRuntime().addShutdownHook(new Thread()
@@ -346,6 +365,7 @@ public class CheckValveChatRelay
                     logger.writeln( "[SHUTDOWN] Stopping threads." );
                     tcpListenerThread.interrupt();
                     udpListenerThread.interrupt();
+                    ctlListenerThread.interrupt();
                     sendChatMessageThread.interrupt();
                     checkConnectionThread.interrupt();
 
@@ -358,6 +378,13 @@ public class CheckValveChatRelay
                     if( logRotateThread.isAlive() )
                         logRotateThread.interrupt();
 
+                    if( updateCheckThread.isAlive() )
+                        updateCheckThread.interrupt();
+
+                    // Let the threads finish
+                    Thread.sleep(1000);
+
+                    // Stop the logger
                     logger.writeln( "[SHUTDOWN] Shutting down the CheckValve Chat Relay." );
                     logger.close();
 
@@ -420,6 +447,8 @@ public class CheckValveChatRelay
         final String DEFAULT_MESSAGE_ADDRESS = "0.0.0.0";
         final String DEFAULT_MESSAGE_PORT = "12345";
         final String DEFAULT_PASSWORD = "";
+        final String DEFAULT_UPDATE_CHECK_ENABLED = "1";
+        final String DEFAULT_UPDATE_CHECK_INTERVAL = "86400";
 
         Properties config = new Properties();
 
@@ -564,6 +593,18 @@ public class CheckValveChatRelay
             System.out.println( "WARNING: Specified value for debugLevel is invalid, using default (" + DEFAULT_DEBUG_LEVEL + ")." );
         }
 
+        try
+        {
+            updateCheckEnabled = Integer.parseInt(config.getProperty("updateCheckEnabled",DEFAULT_UPDATE_CHECK_ENABLED).trim());
+            if( updateCheckEnabled < 0 || updateCheckEnabled > 1 ) throw new NumberFormatException();
+        }
+        catch( NumberFormatException n )
+        {
+            updateCheckEnabled = Integer.parseInt(DEFAULT_UPDATE_CHECK_ENABLED);
+            System.out.println();
+            System.out.println( "WARNING: Specified value for updateCheckEnabled is invalid, using default (" + DEFAULT_UPDATE_CHECK_ENABLED + ")." );
+        }
+
         //
         // Long options
         //
@@ -626,6 +667,18 @@ public class CheckValveChatRelay
             autoBanDuration = Long.parseLong(DEFAULT_AUTOBAN_DURATION)*1000;
             System.out.println();
             System.out.println( "WARNING: Specified value for autoBanDuration is invalid, using default (" + DEFAULT_AUTOBAN_DURATION + ")." );
+        }
+
+        try
+        {
+            updateCheckInterval = Long.parseLong(config.getProperty("updateCheckInterval",DEFAULT_UPDATE_CHECK_INTERVAL).trim())*1000;
+            if( updateCheckInterval < 0 ) throw new NumberFormatException();
+        }
+        catch( NumberFormatException n )
+        {
+            updateCheckInterval = Long.parseLong(DEFAULT_UPDATE_CHECK_INTERVAL)*1000;
+            System.out.println();
+            System.out.println( "WARNING: Specified value for updateCheckInterval is invalid, using default (" + DEFAULT_UPDATE_CHECK_INTERVAL + ")." );
         }
 
         //
@@ -2583,6 +2636,101 @@ public class CheckValveChatRelay
                     logger.writeln( "Rejecting control request : Invalid value." );
                     continue;
                 }
+            }
+        }
+    }
+
+    private static class CheckForUpdates implements Runnable
+    {
+        private static final String websiteURL = "https://sites.google.com/site/checkvalveapp/chatrelay/downloads";
+        private static final String versionURL = "https://raw.githubusercontent.com/daparker/checkvalve-chat-relay/master/version.txt";
+
+        // Set the first-run flag (only print messages to the console on the first run)
+        private static boolean firstRun = true;
+
+        private long id = 0;
+        private String name = new String();
+
+        public void run()
+        {
+            id = Thread.currentThread().getId();
+            name = Thread.currentThread().getName();
+
+            if( debugLevel >= 3 )
+                logger.debug(3, "Thread started (name=" + name + ", id=" + id + ").");
+
+            if( firstRun )
+                logger.writeln( "[UPDATE] Running update check on startup." );
+
+            try
+            {
+                for(;;)
+                {
+                    String currentVersion = new String();
+
+                    URL url = new URL(versionURL);
+                    HttpsURLConnection conn = (HttpsURLConnection)url.openConnection();
+                    InputStream ins = conn.getInputStream();
+                    InputStreamReader isr = new InputStreamReader(ins);
+                    BufferedReader in = new BufferedReader(isr);
+
+                    currentVersion = in.readLine().trim();
+
+                    in.close();
+                    conn.disconnect();
+
+                    if( currentVersion.length() == 0 )
+                    {
+                        updateCheckError();
+                    }
+                    else if( currentVersion.equals(PROGRAM_VERSION) )
+                    {
+                        if( firstRun )
+                            logger.writeln( "[UPDATE] CheckValve Chat Relay is up to date." );
+                    }
+                    else
+                    {
+                        logger.writeln( "[UPDATE] A new version is available (current = " + PROGRAM_VERSION + ", new = " + currentVersion + ")" );
+                        logger.writeln( "[UPDATE] Visit " + websiteURL + " for the latest version." );
+
+                        if( firstRun )
+                        {
+                            System.out.println();
+                            System.out.println( "[UPDATE] A new version is available (current = " + PROGRAM_VERSION + ", new = " + currentVersion + ")" );
+                            System.out.println( "[UPDATE] Visit " + websiteURL + " for the latest version." );
+                        }
+                    }
+
+                    // Unset the first-run flag
+                    if( firstRun )
+                        firstRun = false;
+
+                    Thread.sleep(updateCheckInterval);
+                }
+            }
+            catch( InterruptedException ie )
+            {
+                if( debugLevel >= 3 )
+                    logger.debug(3, name + " [ID=" + id + "] received an interrupt.");
+
+                return;
+            }
+            catch( Exception e )
+            {
+                updateCheckError();
+            }
+        }
+
+        private static void updateCheckError()
+        {
+            logger.writeln( "[ERROR] Automatic update check failed." );
+            logger.writeln( "[ERROR] Check for an updated version at " + websiteURL );
+
+            if( firstRun )
+            {
+                System.out.println();
+                System.out.println( "[ERROR] Automatic update check failed." );
+                System.out.println( "[ERROR] Check for an updated version at " + websiteURL );
             }
         }
     }
